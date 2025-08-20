@@ -1,0 +1,21 @@
+# Python virtual environment
+venv/
+/kaggle_env/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# IDE and OS specific files
+.vscode/
+.idea/
+.DS_Store
+
+# Large output directories
+# You should version your code, not your generated data/models
+/pre_trained_model/
+Archive/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
