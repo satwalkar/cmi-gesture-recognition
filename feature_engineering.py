@@ -353,57 +353,6 @@ def _get_windowed_stats_features(df_seq: pl.DataFrame, cols: list) -> dict:
                     features[f'{col}_w{win_size}_{suffix}'] = 0.0
     return features
 
-"""
-def _get_tof_dimensionality_reduction_features(df_seq: pl.DataFrame) -> dict:
-    
-    # Applies dimensionality reduction (PCA) to each of the 5 TOF sensor groups.
-    # It calculates the average TOF signal shape for the sequence and then runs PCA.
-    
-    if not config.ENABLE_TOF_FEATURES:
-        return {}
-
-    features = {}
-    tof_sensor_groups = {f'tof_{i}': [f'tof_{i}_v{j}' for j in range(64)] for i in range(1, 6)}
-
-    for group_name, cols_in_group in tof_sensor_groups.items():
-        existing_tof_bins = [col for col in cols_in_group if col in df_seq.columns and df_seq[col].dtype.is_numeric()]
-
-        if len(existing_tof_bins) >= config.TOF_DR_COMPONENTS and df_seq.height > 1:
-            # Average the TOF signal across all time steps to get a single representative shape
-            tof_data_avg = df_seq.select(existing_tof_bins).mean().to_numpy()
-            tof_data_avg = np.nan_to_num(tof_data_avg, nan=0.0, posinf=0.0, neginf=0.0)
-
-            # Check for constant data, which would cause PCA to fail
-            if tof_data_avg.shape[1] >= config.TOF_DR_COMPONENTS and not np.all(tof_data_avg == tof_data_avg[0, 0]):
-                try:
-                    if config.TOF_DR_METHOD == 'pca':
-                        pca_tof = PCA(n_components=config.TOF_DR_COMPONENTS, random_state=config.RANDOM_STATE)
-                        pca_tof.fit(tof_data_avg)
-                        for i in range(config.TOF_DR_COMPONENTS):
-                            features[f'{group_name}_pca_component_{i+1}'] = pca_tof.components_[0, i]
-                        for i in range(min(config.TOF_DR_COMPONENTS, len(pca_tof.explained_variance_ratio_))):
-                            features[f'{group_name}_pca_explained_variance_ratio_{i+1}'] = pca_tof.explained_variance_ratio_[i]
-                    # Placeholder for UMAP if ever implemented
-                    elif config.TOF_DR_METHOD == 'umap':
-                        pass
-                except ValueError:
-                    # Handle cases where PCA might fail unexpectedly
-                    for i in range(config.TOF_DR_COMPONENTS):
-                        features[f'{group_name}_pca_component_{i+1}'] = 0.0
-                        features[f'{group_name}_pca_explained_variance_ratio_{i+1}'] = 0.0
-            else:
-                # Data is constant or has too few features, fill with zeros
-                for i in range(config.TOF_DR_COMPONENTS):
-                    features[f'{group_name}_pca_component_{i+1}'] = 0.0
-                    features[f'{group_name}_pca_explained_variance_ratio_{i+1}'] = 0.0
-            del tof_data_avg
-        else:
-            # Not enough data for DR, fill with zeros
-            for i in range(config.TOF_DR_COMPONENTS):
-                features[f'{group_name}_pca_component_{i+1}'] = 0.0
-                features[f'{group_name}_pca_explained_variance_ratio_{i+1}'] = 0.0
-    return features
-"""
 
 def _get_tof_dimensionality_reduction_features(df_seq: pl.DataFrame) -> dict:
     """
