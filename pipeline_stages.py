@@ -432,10 +432,18 @@ def run_feature_engineering_stage(sequence_info_all_pd):
         with open(config_file_path, 'w') as f:
             json.dump(current_config, f, indent=4)
 
+        # First, get a list of ONLY the parquet files
+        parquet_files = [f for f in os.listdir(feature_output_dir) if f.endswith('.parquet')]
+        if not parquet_files:
+            raise FileNotFoundError("No Parquet files found to read the schema from!")
+
         # ... (code to get schema from a sample file and save feature_names.json) ...
         # Get schema from a sample file to create feature_names.json
-        sample_file = os.path.join(feature_output_dir, os.listdir(feature_output_dir)[0])
+        # Then, select the first file from that safe list
+        
+        sample_file = os.path.join(feature_output_dir, parquet_files[0])
         sample_df = pl.read_parquet(sample_file)
+        
         feature_names = feature_engineering.get_all_feature_columns(sample_df)
         with open(config.FEATURE_NAMES_FILE_PATH, 'w') as f:
             json.dump(feature_names, f, indent=4)

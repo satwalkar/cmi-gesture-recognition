@@ -8,10 +8,10 @@ TRAIN = True   # Set to False for submission/inference
 
 # --- Framework Control Flags (for development) ---
 FORCE_RERUN_SETUP = True
-FORCE_RERUN_FEATURE_ENGINEERING = True
-FORCE_RERUN_INTER_SEQUENCE = True
-FORCE_RERUN_TRAINING = True
-FORCE_RERUN_ANALYSIS = True
+FORCE_RERUN_FEATURE_ENGINEERING = False
+FORCE_RERUN_INTER_SEQUENCE = False
+FORCE_RERUN_TRAINING = False
+FORCE_RERUN_ANALYSIS = False
 
 # --- Path Configuration: Define paths based on environment
 if ENV_PARAM == 1:
@@ -55,11 +55,11 @@ WORKERS_AUTOTUNE = tf.data.AUTOTUNE # For tf.data.Dataset prefetching
 # CRITICAL: ENABLE_TOF_FEATURES.
 # Impact: Enabling this drastically increases data dimensionality. It can improve performance
 # but also significantly increases computational cost and and memory. Use with caution.
-ENABLE_DEMOGRAPHICS = False
+ENABLE_DEMOGRAPHICS = True
 ENABLE_ACC_FEATURES = True
 ENABLE_ROT_FEATURES = True
 ENABLE_THM_FEATURES = False
-ENABLE_TOF_FEATURES = True
+ENABLE_TOF_FEATURES = False
 
 # Feature Engineering Control Variables - Organized by Level and Granularity
 # Level 1: Basic/Fundamental Per-Row Features
@@ -76,7 +76,7 @@ ENABLE_DATA_AUGMENTATION = True # Add noise, time warping, magnitude scaling dur
 # CRITICAL: These flags control which advanced features are computed. Enable them selectively.
 # Impact: They introduce highly predictive features but increase computational cost.
 # Recommended strategy: Start with basic stats, then enable advanced features one by one.
-ENABLE_BASIC_STATS = False # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
+ENABLE_BASIC_STATS = True # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
 ENABLE_DOMINANT_FFT_FEATURES = False # Controls dominant FFT amplitude and frequency features
 ENABLE_COMPREHENSIVE_AUTOCORR = False # Autocorrelation at lag 1
 ENABLE_COMPREHENSIVE_MISSING_INDICATORS = False # Inactivity indicators for TOF/THM
@@ -96,10 +96,10 @@ ENABLE_INTER_SEQUENCE_FEATURES = True # Deviations from subject-level means/stds
 # CRITICAL: TOF_DR_COMPONENTS.
 # Impact: Determines the dimensionality of the TOF data after reduction.
 # Recommended range: 2 to 10.
-ENABLE_TOF_DIMENSIONALITY_REDUCTION = True # A.1. Apply PCA/UMAP on 64 TOF bins
+ENABLE_TOF_DIMENSIONALITY_REDUCTION = False # A.1. Apply PCA/UMAP on 64 TOF bins
 TOF_DR_METHOD = 'umap' # 'pca' or 'umap' (if umap-learn is installed)
 TOF_DR_COMPONENTS = 3 # Number of components for TOF DR
-ENABLE_TOF_SHAPE_FEATURES = True # A.2. Extract features describing the "shape" of TOF signal
+ENABLE_TOF_SHAPE_FEATURES = False # A.2. Extract features describing the "shape" of TOF signal
 ENABLE_THM_SPATIAL_TEMPORAL_FEATURES = False # A.3. Spatial/temporal features for THM sensors
 ENABLE_INTERACTION_FEATURES = False # A.4. Interaction features between sensor types
 
@@ -121,27 +121,27 @@ ENABLE_BASIC_STATS_THM = False
 ENABLE_BASIC_STATS_TOF = False
 
 # Dominant FFT Features
-ENABLE_DOMINANT_FFT_FEATURES_IMU = True
+ENABLE_DOMINANT_FFT_FEATURES_IMU = False
 ENABLE_DOMINANT_FFT_FEATURES_THM = False
 ENABLE_DOMINANT_FFT_FEATURES_TOF = False
 
 # Comprehensive FFT Spectral Features
-ENABLE_COMPREHENSIVE_FFT_SPECTRAL_IMU = True
+ENABLE_COMPREHENSIVE_FFT_SPECTRAL_IMU = False
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL_THM = False
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL_TOF = False
 
 # Autocorrelation
-ENABLE_COMPREHENSIVE_AUTOCORR_IMU = True
+ENABLE_COMPREHENSIVE_AUTOCORR_IMU = False
 ENABLE_COMPREHENSIVE_AUTOCORR_THM = False
 ENABLE_COMPREHENSIVE_AUTOCORR_TOF = False
 
 # NOLDS Entropy
-ENABLE_NOLDS_ENTROPY_IMU = True
+ENABLE_NOLDS_ENTROPY_IMU = False
 ENABLE_NOLDS_ENTROPY_THM = False
 ENABLE_NOLDS_ENTROPY_TOF = False
 
 # Windowed Statistics
-ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = True
+ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_THM = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_TOF = False
 
