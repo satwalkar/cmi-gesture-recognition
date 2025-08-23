@@ -538,9 +538,80 @@ def run_inter_sequence_feature_stage(sequence_info_all_pd):
 
     print("Inter-sequence feature stage complete.")
 
-# ... (put this right after the data generator and before run_training_stage)
 def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_map, demographics_processed_all, feature_columns, num_classes, output_signature):
-    """Creates and prepares training and validation tf.data.Dataset objects from IDs."""
+    """
+    Creates and prepares training and validation tf.data.Dataset objects.
+    This version uses .map() for parallel data processing to prevent CPU bottlenecks.
+    """
+    
+    # 1. Create a lightweight generator that just yields IDs and labels
+    def id_generator(ids):
+        for seq_id in ids:
+            yield (seq_id, label_map[seq_id])
+            
+    # 2. Create a processing function that will be run in parallel
+    def _process_data(seq_id_tensor, label):
+        # Decode the tensor back to a string
+        seq_id = seq_id_tensor.numpy().decode('utf-8')
+        
+        # This is the logic from your old generator
+        sequence = data_cache[seq_id].copy()
+        
+        # Data Augmentation (will be applied in parallel)
+        if config.ENABLE_DATA_AUGMENTATION:
+            if np.random.rand() < 0.5: sequence = jitter(sequence)
+            if np.random.rand() < 0.5: sequence = time_warp(sequence)
+            if np.random.rand() < 0.5: sequence = magnitude_warp(sequence)
+
+        # Padding/Truncation
+        if sequence.shape[0] > config.MAX_SEQUENCE_LENGTH:
+            sequence = sequence[:config.MAX_SEQUENCE_LENGTH]
+        elif sequence.shape[0] < config.MAX_SEQUENCE_LENGTH:
+            padding = np.zeros((config.MAX_SEQUENCE_LENGTH - sequence.shape[0], sequence.shape[1]), dtype=np.float32)
+            sequence = np.vstack([sequence, padding])
+
+        # Demographics
+        if demographics_processed_all is not None:
+            subject_id = seq_to_subj_map.loc[seq_id]
+            demographics_data = demographics_processed_all.loc[subject_id].values.astype('float32')
+        else:
+            demographics_data = np.array([], dtype='float32')
+        
+        return {'time_series_input': sequence, 'demographics_input': demographics_data}, label
+
+    # 3. Wrap the processing function in tf.py_function
+    def _tf_process_data(seq_id, label):
+        inputs, label_out = tf.py_function(
+            _process_data,
+            inp=[seq_id, label],
+            Tout=[{'time_series_input': tf.float32, 'demographics_input': tf.float32}, tf.float32]
+        )
+        # Set shapes manually after the py_function
+        inputs['time_series_input'].set_shape(output_signature[0]['time_series_input'].shape)
+        inputs['demographics_input'].set_shape(output_signature[0]['demographics_input'].shape)
+        label_out.set_shape(output_signature[1].shape)
+        return inputs, label_out
+
+    # 4. Build the efficient tf.data pipelines
+    train_dataset = tf.data.Dataset.from_generator(lambda: id_generator(train_ids), output_signature=(tf.string, tf.float32))
+    val_dataset = tf.data.Dataset.from_generator(lambda: id_generator(val_ids), output_signature=(tf.string, tf.float32))
+
+    # Use .map() with num_parallel_calls to offload work to multiple CPU cores
+    train_dataset = train_dataset.map(_tf_process_data, num_parallel_calls=config.WORKERS_AUTOTUNE)
+    val_dataset = val_dataset.map(_tf_process_data, num_parallel_calls=config.WORKERS_AUTOTUNE)
+
+    # Apply batching and prefetching
+    train_dataset = train_dataset.batch(config.GLOBAL_BATCH_SIZE).repeat().prefetch(config.WORKERS_AUTOTUNE)
+    val_dataset = val_dataset.batch(config.GLOBAL_BATCH_SIZE).repeat().prefetch(config.WORKERS_AUTOTUNE)
+
+    steps_per_epoch = (len(train_ids) + config.GLOBAL_BATCH_SIZE - 1) // config.GLOBAL_BATCH_SIZE
+    validation_steps = (len(val_ids) + config.GLOBAL_BATCH_SIZE - 1) // config.GLOBAL_BATCH_SIZE
+    
+    return train_dataset, val_dataset, steps_per_epoch, validation_steps, np.array([label_map[sid] for sid in train_ids])
+
+"""
+def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_map, demographics_processed_all, feature_columns, num_classes, output_signature):
+    # Creates and prepares training and validation tf.data.Dataset objects from IDs.
 
     # Prepare labels for the current split
     train_labels = np.array([label_map[sid] for sid in train_ids])
@@ -583,6 +654,7 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
     validation_steps = (len(val_ids) + config.GLOBAL_BATCH_SIZE - 1) // config.GLOBAL_BATCH_SIZE
 
     return train_dataset, val_dataset, steps_per_epoch, validation_steps, train_labels
+"""
 
 def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_gesture_label_encoder, strategy):
     """Runs the K-Fold training loop with memory-efficient data loading."""
