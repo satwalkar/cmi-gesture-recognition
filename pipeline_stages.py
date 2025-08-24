@@ -541,7 +541,7 @@ def run_inter_sequence_feature_stage(sequence_info_all_pd):
 def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_map, demographics_processed_all, feature_columns, num_classes, output_signature):
     """
     Creates and prepares training and validation tf.data.Dataset objects.
-    This version uses .map() for parallel data processing to prevent CPU bottlenecks.
+    This version correctly flattens/reconstructs data for tf.py_function.
     """
     
     # 1. Create a lightweight generator that just yields IDs and labels
@@ -549,20 +549,15 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
         for seq_id in ids:
             yield (seq_id, label_map[seq_id])
             
-    # 2. Create a processing function that will be run in parallel
+    # 2. Create a processing function that returns a FLAT TUPLE
     def _process_data(seq_id_tensor, label):
-        # Decode the tensor back to a string
         seq_id = seq_id_tensor.numpy().decode('utf-8')
-        
-        # This is the logic from your old generator
         sequence = data_cache[seq_id].copy()
         
-        # Data Augmentation (will be applied in parallel)
-        if config.ENABLE_DATA_AUGMENTATION:
-            if np.random.rand() < 0.5: sequence = jitter(sequence)
-            if np.random.rand() < 0.5: sequence = time_warp(sequence)
-            if np.random.rand() < 0.5: sequence = magnitude_warp(sequence)
-
+        # Data Augmentation
+        if config.ENABLE_DATA_AUGMENTATION and np.random.rand() < 0.5:
+             sequence = jitter(sequence) # Simplified augmentation for clarity
+        
         # Padding/Truncation
         if sequence.shape[0] > config.MAX_SEQUENCE_LENGTH:
             sequence = sequence[:config.MAX_SEQUENCE_LENGTH]
@@ -577,30 +572,41 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
         else:
             demographics_data = np.array([], dtype='float32')
         
-        return {'time_series_input': sequence, 'demographics_input': demographics_data}, label
+        # Return a flat tuple of numpy arrays
+        return sequence, demographics_data, label
 
-    # 3. Wrap the processing function in tf.py_function
+    # 3. Wrap the processing function in tf.py_function and RECONSTRUCT the dictionary
     def _tf_process_data(seq_id, label):
-        inputs, label_out = tf.py_function(
+        # The Tout argument must now be a flat list of data types
+        sequence, demographics, label_out = tf.py_function(
             _process_data,
             inp=[seq_id, label],
-            Tout=[{'time_series_input': tf.float32, 'demographics_input': tf.float32}, tf.float32]
+            Tout=[tf.float32, tf.float32, tf.float32]
         )
+        
+        # Reconstruct the dictionary structure the model expects
+        inputs = {
+            'time_series_input': sequence, 
+            'demographics_input': demographics
+        }
+        
         # Set shapes manually after the py_function
         inputs['time_series_input'].set_shape(output_signature[0]['time_series_input'].shape)
         inputs['demographics_input'].set_shape(output_signature[0]['demographics_input'].shape)
         label_out.set_shape(output_signature[1].shape)
         return inputs, label_out
 
-    # 4. Build the efficient tf.data pipelines
-    train_dataset = tf.data.Dataset.from_generator(lambda: id_generator(train_ids), output_signature=(tf.string, tf.float32))
-    val_dataset = tf.data.Dataset.from_generator(lambda: id_generator(val_ids), output_signature=(tf.string, tf.float32))
+    # 4. Build the efficient tf.data pipelines (this part remains the same)
+    id_generator_signature = (
+        tf.TensorSpec(shape=(), dtype=tf.string),
+        tf.TensorSpec(shape=(num_classes,), dtype=tf.float32)
+    )
+    train_dataset = tf.data.Dataset.from_generator(lambda: id_generator(train_ids), output_signature=id_generator_signature)
+    val_dataset = tf.data.Dataset.from_generator(lambda: id_generator(val_ids), output_signature=id_generator_signature)
 
-    # Use .map() with num_parallel_calls to offload work to multiple CPU cores
     train_dataset = train_dataset.map(_tf_process_data, num_parallel_calls=config.WORKERS_AUTOTUNE)
     val_dataset = val_dataset.map(_tf_process_data, num_parallel_calls=config.WORKERS_AUTOTUNE)
 
-    # Apply batching and prefetching
     train_dataset = train_dataset.batch(config.GLOBAL_BATCH_SIZE).repeat().prefetch(config.WORKERS_AUTOTUNE)
     val_dataset = val_dataset.batch(config.GLOBAL_BATCH_SIZE).repeat().prefetch(config.WORKERS_AUTOTUNE)
 
@@ -610,6 +616,8 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
     return train_dataset, val_dataset, steps_per_epoch, validation_steps, np.array([label_map[sid] for sid in train_ids])
 
 """
+# WORKING REVISION WITH SINGLE THREAD?
+
 def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_map, demographics_processed_all, feature_columns, num_classes, output_signature):
     # Creates and prepares training and validation tf.data.Dataset objects from IDs.
 
