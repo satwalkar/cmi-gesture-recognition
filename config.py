@@ -7,10 +7,10 @@ ENV_PARAM = 0  # 1=Kaggle, 0=Local
 TRAIN = True   # Set to False for submission/inference
 
 # --- Framework Control Flags (for development) ---
-FORCE_RERUN_SETUP = False
+FORCE_RERUN_SETUP = True
 FORCE_RERUN_FEATURE_ENGINEERING = False
 FORCE_RERUN_INTER_SEQUENCE = False
-FORCE_RERUN_TRAINING = True
+FORCE_RERUN_TRAINING = False
 FORCE_RERUN_ANALYSIS = True
 
 # --- Path Configuration: Define paths based on environment
@@ -46,7 +46,7 @@ RANDOM_STATE = 42 # Seed for reproducibility
 # CRITICAL: GLOBAL_BATCH_SIZE.
 # Impact: Affects training speed, memory usage, and convergence stability.
 # Recommended range: 32, 64 (current), 128.
-GLOBAL_BATCH_SIZE = 64 # Batch size for training
+GLOBAL_BATCH_SIZE = 32 # Batch size for training
 
 WORKERS_AUTOTUNE = tf.data.AUTOTUNE # For tf.data.Dataset prefetching
 
@@ -58,8 +58,8 @@ WORKERS_AUTOTUNE = tf.data.AUTOTUNE # For tf.data.Dataset prefetching
 ENABLE_DEMOGRAPHICS = True
 ENABLE_ACC_FEATURES = True
 ENABLE_ROT_FEATURES = True
-ENABLE_THM_FEATURES = False
-ENABLE_TOF_FEATURES = False
+ENABLE_THM_FEATURES = True
+ENABLE_TOF_FEATURES = True
 
 # Feature Engineering Control Variables - Organized by Level and Granularity
 # Level 1: Basic/Fundamental Per-Row Features
@@ -76,7 +76,7 @@ ENABLE_DATA_AUGMENTATION = True # Add noise, time warping, magnitude scaling dur
 # CRITICAL: These flags control which advanced features are computed. Enable them selectively.
 # Impact: They introduce highly predictive features but increase computational cost.
 # Recommended strategy: Start with basic stats, then enable advanced features one by one.
-ENABLE_BASIC_STATS = False # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
+ENABLE_BASIC_STATS = True # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
 ENABLE_DOMINANT_FFT_FEATURES = False # Controls dominant FFT amplitude and frequency features
 ENABLE_COMPREHENSIVE_AUTOCORR = False # Autocorrelation at lag 1
 ENABLE_COMPREHENSIVE_MISSING_INDICATORS = False # Inactivity indicators for TOF/THM

@@ -3,7 +3,6 @@ import os
 import gc
 import json
 import shutil
-import tempfile
 import joblib
 import numpy as np
 import pandas as pd
@@ -14,7 +13,6 @@ from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import StratifiedGroupKFold, train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 from sklearn.utils.class_weight import compute_class_weight
-from functools import partial
 from scipy.interpolate import interp1d
 #from tensorflow.keras.optimizers.schedules import CosineDecay # For advanced LR schedules
 #from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint #, ReduceLROnPlateau, Callback
@@ -462,7 +460,8 @@ def run_feature_engineering_stage(sequence_info_all_pd):
 # Add tqdm to your imports at the top of the file
 def run_inter_sequence_feature_stage(sequence_info_all_pd):
     """
-    Adds inter-sequence features by processing subjects in memory-efficient chunks.
+    Adds inter-sequence features by processing subjects in memory-efficient chunks. This version has a smart checkpoint that
+    detects if the underlying features have changed.
     """
     if not config.ENABLE_INTER_SEQUENCE_FEATURES:
         print("Skipping inter-sequence feature generation as per config.")
@@ -470,10 +469,22 @@ def run_inter_sequence_feature_stage(sequence_info_all_pd):
 
     print("\n" + "="*80 + "\n--- STAGE 3: Inter-Sequence Feature Generation ---\n" + "="*80)
 
-    # Checkpoint: If the final output (stats file) exists and we are not forcing a rerun, skip.
-    if os.path.exists(config.SUBJECT_STATS_PATH) and not config.FORCE_RERUN_INTER_SEQUENCE:
-        print("✅ Inter-sequence features already generated. Skipping.")
-        return
+    # Define paths for the main feature config and this stage's own config "fingerprint"
+    main_feature_config_path = config.CONFIG_FILE_PATH
+    inter_seq_config_path = os.path.join(config.MODEL_SAVE_DIR, 'inter_sequence_config.json')
+
+    # --- Smarter Checkpoint Logic ---
+    # Check if the main features have changed since this stage last ran successfully.
+    if os.path.exists(inter_seq_config_path) and os.path.exists(main_feature_config_path):
+        with open(inter_seq_config_path, 'r') as f:
+            last_run_config = json.load(f)
+        with open(main_feature_config_path, 'r') as f:
+            current_feature_config = json.load(f)
+        
+        # If the underlying features are the same and we're not forcing a rerun, skip.
+        if last_run_config == current_feature_config and not config.FORCE_RERUN_INTER_SEQUENCE:
+            print("✅ Inter-sequence features are up-to-date with current features. Skipping.")
+            return
 
     # 1. Get all unique subject IDs
     all_subjects = sequence_info_all_pd['subject'].unique().tolist()
@@ -533,11 +544,17 @@ def run_inter_sequence_feature_stage(sequence_info_all_pd):
         del df_chunk, df_chunk_enriched, df_chunk_final, subject_stats_chunk
         gc.collect()
 
+    # --- Finalization: Save the new config "fingerprint" ---
     # After the loop, combine the stats from all chunks and save the final file
+    # This only runs after a successful completion of the stage.
     if all_subject_stats:
         final_subject_stats = pl.concat(all_subject_stats)
         joblib.dump(final_subject_stats, config.SUBJECT_STATS_PATH)
         print(f"✅ Subject-level statistics saved to {config.SUBJECT_STATS_PATH}")
+        
+        # Save a copy of the main feature config as this stage's fingerprint
+        shutil.copy(main_feature_config_path, inter_seq_config_path)
+        print("Saved inter-sequence config fingerprint.")
 
     print("Inter-sequence feature stage complete.")
 
@@ -806,12 +823,20 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
         for fold, (train_idx, val_idx) in enumerate(sgkf.split(sequence_info_all_pd, sequence_info_all_pd['gesture_encoded'], groups=sequence_info_all_pd['subject'])):
 
             model_path = os.path.join(config.MODEL_SAVE_DIR, f"main_model_fold_{fold+1}.keras")
+            train_config_path = os.path.join(config.MODEL_SAVE_DIR, f"training_config_fold_{fold+1}.json")           
 
-            # --- THIS IS THE MISSING LOGIC ---
-            if os.path.exists(model_path) and not config.FORCE_RERUN_TRAINING:
-                print(f"✅ Model for fold {fold+1} already exists. Skipping training.")
-                continue # This command skips to the next fold
-            # --------------------------------
+            # --- NEW SMART CHECKPOINT ---
+            hp_placeholder = model_definition.kt.HyperParameters()
+            # (Your hp_placeholder.Fixed(...) lines go here to define the current model config)
+            current_model_config = hp_placeholder.values
+
+            if os.path.exists(train_config_path) and not config.FORCE_RERUN_TRAINING:
+                with open(train_config_path, 'r') as f:
+                    saved_model_config = json.load(f)
+                if saved_model_config == current_model_config:
+                    print(f"✅ Model for fold {fold+1} is up-to-date. Skipping training.")
+                    continue
+            # --------------------------
 
             print(f"\n--- Processing Fold {fold+1}/{config.N_SPLITS} ---")
 
@@ -920,6 +945,11 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
 
             joblib.dump(ts_scaler, os.path.join(config.MODEL_SAVE_DIR, f"ts_scaler_fold_{fold+1}.pkl"))
 
+            # Save the config fingerprint AFTER all other artifacts for this fold are successfully saved.
+            with open(train_config_path, 'w') as f:
+                json.dump(current_model_config, f, indent=4)
+            # ------------------------------------
+
             # 8. Clean up memory before the next fold
             del train_data_pl, val_data_pl, data_cache, model
             gc.collect()
@@ -934,15 +964,25 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
     Consolidates OOF predictions and runs CM, Permutation Importance, and SHAP analyses.
     """
     
+    # The analysis depends on the trained models. We use the config from fold 1 as a fingerprint.
+    train_config_path = os.path.join(config.MODEL_SAVE_DIR, "training_config_fold_1.json")
+    analysis_fingerprint_path = os.path.join(config.MODEL_SAVE_DIR, "analysis_fingerprint.json")
+
+    # Check if an analysis has been run before and if the model config it was run on is the same as the current model config.
+    if os.path.exists(analysis_fingerprint_path) and os.path.exists(train_config_path) and not config.FORCE_RERUN_ANALYSIS:
+        with open(train_config_path, 'r') as f:
+            current_model_config = json.load(f)
+        with open(analysis_fingerprint_path, 'r') as f:
+            last_analysis_config = json.load(f)
+        
+        if current_model_config == last_analysis_config:
+            print("✅ Analysis is up-to-date with trained models. Skipping.")
+            return
+        
     # This now correctly reads the populated dictionary from the config module
     class_names = sorted(list(config.GESTURE_LABELS.keys()))
     
     print("\n" + "="*80 + "\n--- STAGE 5: Post-Training Analysis ---\n" + "="*80)
-
-    cm_plot_path = os.path.join(config.MODEL_SAVE_DIR, "confusion_matrix.png")
-    if os.path.exists(cm_plot_path) and not config.FORCE_RERUN_ANALYSIS:
-        print("Analysis artifacts already exist. Skipping analysis stage.")
-        return
 
     # 1. Consolidate OOF predictions
     all_oof_predictions, all_oof_true_labels = [], []
