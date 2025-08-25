@@ -265,13 +265,107 @@ class OneCycleLR(tf.keras.callbacks.Callback):
         
         tf.keras.backend.set_value(self.model.optimizer.lr, new_lr)
         self.lrs.append(new_lr)
-        
+
 def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, num_classes: int):
     """
-    Builds the Keras model for Hyperparameter Optimization (B.1).
-    Incorporates Transformer block and Multi-Head Attention (B.3, B.4).
-    This function now dynamically chooses the normalization layer based on `NORMALIZATION_LAYER_TYPE`.
+    Builds the Keras model with a flexible, config-driven architecture.
+    This version has a clean, unified structure.
     """
+    # --- 1. Define Full Hyperparameter Search Space (ONCE) ---
+    l2_reg_strength = hp.Choice('l2_reg', values=[1e-4, 1e-5, 1e-3], default=1e-4)
+    conv1d_filters_1 = hp.Choice('conv1d_filters_1', values=[32, 48, 64], default=32)
+    conv1d_kernel_1 = hp.Choice('conv1d_kernel_1', values=[5, 3], default=5)
+    conv1d_filters_2 = hp.Choice('conv1d_filters_2', values=[64, 96, 128], default=64)
+    conv1d_kernel_2 = hp.Choice('conv1d_kernel_2', values=[3, 5], default=3)
+    
+    # GRU-specific HPs
+    gru_units_1 = hp.Int('gru_units_1', min_value=32, max_value=96, step=32, default=64)
+    gru_units_2 = hp.Int('gru_units_2', min_value=16, max_value=64, step=16, default=32)
+    ts_dropout_rate = hp.Float('ts_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
+    
+    # Transformer-specific HPs
+    transformer_num_heads = hp.Choice('transformer_num_heads', values=[4, 8, 2], default=4)
+    transformer_ff_dim = hp.Int('transformer_ff_dim', min_value=128, max_value=384, step=128, default=256)
+    transformer_dropout_rate = hp.Float('transformer_dropout_rate', min_value=0.2, max_value=0.4, step=0.1, default=0.3)
+    
+    # Final classifier HPs
+    dense_units_demo = hp.Choice('dense_units_demo', values=[16, 32], default=16)
+    combined_dense_units = hp.Choice('combined_dense_units', values=[64, 96, 128], default=64)
+    combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
+    
+    # --- 2. Define Common Arguments ---
+    l2_reg = l2(l2_reg_strength)
+    initializer = tf.keras.initializers.GlorotUniform(seed=config.RANDOM_STATE)
+
+    # --- 3. Build Model Architecture ---
+    ts_input = Input(shape=ts_shape, name='time_series_input')
+    x = Conv1D(conv1d_filters_1, conv1d_kernel_1, activation='relu', padding='same', kernel_regularizer=l2_reg, kernel_initializer=initializer)(ts_input)
+    x = InstanceNormalization()(x)
+    x = Conv1D(conv1d_filters_2, conv1d_kernel_2, activation='relu', padding='same', kernel_regularizer=l2_reg, kernel_initializer=initializer)(x)
+    x = InstanceNormalization()(x)
+
+    # --- Core Sequential Branch ---
+    if config.MODEL_TYPE == 'gru':
+        x = Bidirectional(GRU(gru_units_1, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
+        x = InstanceNormalization()(x)
+        x = Bidirectional(GRU(gru_units_2, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
+        x = InstanceNormalization()(x)
+        
+        if config.ATTENTION_TYPE == 'simple':
+            x = attention_block(x)
+        else: # bahdanau
+            query_gru = GRU(gru_units_1, return_sequences=False)(x)
+            x, _ = BahdanauAttention(128)(x, query_gru)
+        ts_features = Dropout(ts_dropout_rate)(x)
+
+    elif config.MODEL_TYPE == 'transformer':
+        x = PositionalEmbedding(sequence_length=config.MAX_SEQUENCE_LENGTH, output_dim=conv1d_filters_2)(x)
+        x = TransformerEncoder(embed_dim=conv1d_filters_2, num_heads=transformer_num_heads,
+                               ff_dim=transformer_ff_dim, rate=transformer_dropout_rate,
+                               kernel_initializer=initializer)(x)
+        x = attention_block(x)
+        ts_features = Dropout(combined_dropout_rate)(x)
+
+    elif config.MODEL_TYPE == 'hybrid':
+        x = Bidirectional(GRU(gru_units_1, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
+        x = InstanceNormalization()(x)
+        x = TransformerEncoder(embed_dim=gru_units_1*2, num_heads=transformer_num_heads,
+                               ff_dim=transformer_ff_dim, rate=transformer_dropout_rate,
+                               kernel_initializer=initializer)(x)
+        x = attention_block(x)
+        ts_features = Dropout(combined_dropout_rate)(x)
+
+    else:
+        raise ValueError(f"Invalid MODEL_TYPE in config: '{config.MODEL_TYPE}'. Choose 'gru', 'transformer', or 'hybrid'.")
+
+    # --- Final Classifier Branch ---
+    if config.ENABLE_DEMOGRAPHICS:
+        demo_input = Input(shape=demo_shape, name='demographics_input')
+        y = Dense(dense_units_demo, activation='relu', kernel_regularizer=l2_reg, kernel_initializer=initializer)(demo_input)
+        y = BatchNormalization()(y)
+        combined = Concatenate()([ts_features, y])
+        final_classifier_input = combined
+        model_inputs = [ts_input, demo_input]
+    else:
+        final_classifier_input = ts_features
+        model_inputs = [ts_input]
+
+    z = Dropout(combined_dropout_rate)(final_classifier_input)
+    z = Dense(combined_dense_units, activation='relu', kernel_regularizer=l2_reg, kernel_initializer=initializer)(z)
+    output_layer = Dense(num_classes, activation='softmax', name='output')(z)
+
+    model = Model(inputs=model_inputs, outputs=output_layer)
+    
+    # Return the UNCOMPILED model. Compilation is handled in the training stage.
+    return model
+
+"""    
+def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, num_classes: int):
+    
+    # Builds the Keras model for Hyperparameter Optimization (B.1).
+    # Incorporates Transformer block and Multi-Head Attention (B.3, B.4).
+    # This function now dynamically chooses the normalization layer based on `NORMALIZATION_LAYER_TYPE`.
+
     # Hyperparameters for the model architecture
 
     # L2 Regularization: Centered around 1e-4
@@ -448,3 +542,5 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     print("Model built successfully with multiple inputs.")
     # model.summary() # Commented out to avoid verbose output during HPO
     return model
+"""
+    

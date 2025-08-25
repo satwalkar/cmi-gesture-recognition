@@ -78,19 +78,19 @@ ENABLE_DATA_AUGMENTATION = True # Add noise, time warping, magnitude scaling dur
 # Recommended strategy: Start with basic stats, then enable advanced features one by one.
 ENABLE_BASIC_STATS = True # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
 ENABLE_DOMINANT_FFT_FEATURES = False # Controls dominant FFT amplitude and frequency features
-ENABLE_COMPREHENSIVE_AUTOCORR = False # Autocorrelation at lag 1
+ENABLE_COMPREHENSIVE_AUTOCORR = True # Autocorrelation at lag 1
 ENABLE_COMPREHENSIVE_MISSING_INDICATORS = False # Inactivity indicators for TOF/THM
 ENABLE_NOLDS_ENTROPY = False # Sample Entropy (requires nolds library)
 ENABLE_COMPREHENSIVE_WINDOWED_STATS = False # Aggregated statistics over sliding windows
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL = False # Enhanced frequency domain features (energy bands, centroids, etc.)
-ENABLE_COMPREHENSIVE_CORRELATIONS = False # Cross-axis correlations
+ENABLE_COMPREHENSIVE_CORRELATIONS = True # Cross-axis correlations
 ENABLE_COMPREHENSIVE_PCA = False # PCA explained variance ratios
 
 # Level 4: Inter-Sequence Features
 # CRITICAL: ENABLE_INTER_SEQUENCE_FEATURES.
 # Impact: This feature set is powerful for subject-specific learning and can significantly
 # improve performance by normalizing a sequence relative to a subject's behavior.
-ENABLE_INTER_SEQUENCE_FEATURES = False # Deviations from subject-level means/stds, sequence position
+ENABLE_INTER_SEQUENCE_FEATURES = True # Deviations from subject-level means/stds, sequence position
 
 # NEW Feature Engineering Control Variables (from A.1-A.4)
 # CRITICAL: TOF_DR_COMPONENTS.
