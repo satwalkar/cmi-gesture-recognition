@@ -20,6 +20,9 @@ from scipy.interpolate import interp1d
 #from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint #, ReduceLROnPlateau, Callback
 from tqdm import tqdm
 
+from sklearn.feature_selection import SelectFromModel
+from sklearn.ensemble import RandomForestClassifier
+
 # Import from our new modules
 import config
 import data_utils
@@ -678,8 +681,16 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
     # If demographics are disabled, the shape is 0. Otherwise, get it from the dataframe.
     demo_shape = (demographics_processed_all.shape[1],) if demographics_processed_all is not None else (0,)
 
+    # Conditionally load the feature list
+    feature_list_path = config.FEATURE_NAMES_FILE_PATH
+    if config.ENABLE_FEATURE_SELECTION:
+        selected_features_path = os.path.join(config.MODEL_SAVE_DIR, 'selected_feature_names.json')
+        if os.path.exists(selected_features_path):
+            feature_list_path = selected_features_path
+            print(f"Using selected feature set from: {feature_list_path}")
+            
     # Load feature names and create shape tuple
-    with open(config.FEATURE_NAMES_FILE_PATH, 'r') as f:
+    with open(feature_list_path, 'r') as f:
         feature_columns = json.load(f)
     ts_shape = (config.MAX_SEQUENCE_LENGTH, len(feature_columns))
 
@@ -836,51 +847,56 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
             # 5. Build and compile the model for this fold
             model_path = os.path.join(config.MODEL_SAVE_DIR, f"main_model_fold_{fold+1}.keras")
             with strategy.scope():
-                # Use a placeholder HP object for fixed parameters
+                # Use a placeholder HP object to lock in the winning HPO recipe
                 hp_placeholder = model_definition.kt.HyperParameters()
-
-                # --- UPDATE THIS BLOCK WITH THE WINNING HPO RECIPE ---
                 hp_placeholder.Fixed('l2_reg', 0.0001)
                 hp_placeholder.Fixed('conv1d_filters_1', 64)
                 hp_placeholder.Fixed('conv1d_kernel_1', 5)
                 hp_placeholder.Fixed('conv1d_filters_2', 64)
                 hp_placeholder.Fixed('conv1d_kernel_2', 5)
-
-                # These are the winning Transformer parameters
                 hp_placeholder.Fixed('transformer_num_heads', 4)
                 hp_placeholder.Fixed('transformer_ff_dim', 256)
                 hp_placeholder.Fixed('transformer_dropout_rate', 0.2)
-
                 hp_placeholder.Fixed('dense_units_demo', 32)
                 hp_placeholder.Fixed('combined_dense_units', 128)
                 hp_placeholder.Fixed('combined_dropout_rate', 0.3)
                 hp_placeholder.Fixed('learning_rate_schedule', 'constant')
                 hp_placeholder.Fixed('initial_learning_rate', 0.0014549982711822707)
-                # ----------------------------------------------------
 
+                # Build the model using the fixed recipe
                 model = model_definition.model_builder(hp_placeholder, ts_shape, demo_shape, num_classes)
 
-                # Define learning rate schedule
-                if config.DEFAULT_LR_SCHEDULE_TYPE == 'cosine_decay':
-                    decay_steps = int(config.DEFAULT_COSINE_DECAY_EPOCHS * steps_per_epoch)
-                    lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
-                        config.DEFAULT_INITIAL_LEARNING_RATE, decay_steps if decay_steps > 0 else 1
-                    )
-                else:
-                    lr_schedule = config.DEFAULT_INITIAL_LEARNING_RATE
+                # --- THIS IS THE FIX ---
+                # Get the winning LR settings FROM the placeholder
+                winning_lr = hp_placeholder.get('initial_learning_rate')
+                winning_schedule_type = hp_placeholder.get('learning_rate_schedule')
+                
+                # Define callbacks
+                callbacks = [
+                    tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
+                    tf.keras.callbacks.ModelCheckpoint(model_path, save_best_only=True, monitor='val_accuracy', mode='max'),
+                    model_definition.LRLogger()
+                ]
 
+                # Initialize optimizer with the winning learning rate
+                optimizer = tf.keras.optimizers.Adam(learning_rate=winning_lr, clipnorm=1.0)
+                
+                # Conditionally set up the learning rate scheduler or callback
+                if winning_schedule_type == 'one_cycle':
+                    total_steps = steps_per_epoch * 100
+                    onecycle_callback = model_definition.OneCycleLR(max_lr=winning_lr, total_steps=total_steps)
+                    callbacks.append(onecycle_callback)
+                elif winning_schedule_type == 'cosine_decay':
+                    decay_steps = int(config.DEFAULT_COSINE_DECAY_EPOCHS * steps_per_epoch)
+                    lr_schedule = tf.keras.optimizers.schedules.CosineDecay(winning_lr, decay_steps if decay_steps > 0 else 1)
+                    optimizer.learning_rate = lr_schedule
+                
+                # Note: The 'constant' case is already handled by initializing the optimizer with winning_lr
+                
                 # Compile the model
-                optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, clipnorm=1.0)
                 model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
-            # 6. Define callbacks and fit the model
-            callbacks = [
-                tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
-                tf.keras.callbacks.ModelCheckpoint(model_path, save_best_only=True, monitor='val_accuracy', mode='max'),
-                model_definition.LRLogger()
-            ]
-
-            print(f"Starting training for Fold {fold+1}...")
+            # 6. Fit the model
             model.fit(
                 train_dataset,
                 validation_data=val_dataset,
@@ -1075,6 +1091,9 @@ def main_orchestrator(strategy):
 
     # Stage 3: Inter-Sequence Features
     run_inter_sequence_feature_stage(sequence_info)
+    
+    # Stage 3.1: Automated Feature Selection
+    run_feature_selection_stage(sequence_info)
 
     # Stages 4 & 5: Training and Analysis
     if config.TRAIN:
@@ -1120,3 +1139,40 @@ def run_diagnostics(sequence_info_all_pd):
                 print(f"   (Example extra: {list(extra_in_features)[:3]})")
     except Exception as e:
         print(f"❌ ERROR: Diagnostics failed to run. Reason: {e}")
+        
+def run_feature_selection_stage(sequence_info):
+    """
+    Loads all features, runs a selection algorithm, and saves the list of best features.
+    """
+    if not config.ENABLE_FEATURE_SELECTION:
+        return # Skip if not enabled
+
+    print("\n" + "="*80 + "\n--- NEW STAGE: Automated Feature Selection ---\n" + "="*80)
+    
+    # Load all feature data (this can be memory intensive)
+    all_feature_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f) for f in os.listdir(config.PERMANENT_FEATURE_DIR) if f.endswith('.parquet')]
+    df_all = pl.read_parquet(all_feature_files)
+    
+    # Use only static features for selection
+    static_features_df = df_all.group_by('sequence_id').first()
+    
+    # Prepare data
+    with open(config.FEATURE_NAMES_FILE_PATH, 'r') as f:
+        all_feature_names = json.load(f)
+    static_feature_names = [f for f in all_feature_names if any(s in f for s in ['_mean', '_std', '_fft', '_wavelet'])]
+    
+    X = static_features_df.select(static_feature_names).to_numpy()
+    y = static_features_df.join(sequence_info, on='sequence_id').select('gesture_encoded').to_numpy().ravel()
+    
+    # Run selection
+    selector = SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=config.RANDOM_STATE, n_jobs=-1))
+    selector.fit(X, y)
+    
+    selected_features = np.array(static_feature_names)[selector.get_support()].tolist()
+    print(f"Selected {len(selected_features)} features out of {len(static_feature_names)}.")
+
+    # Save the new list of selected features
+    selected_features_path = os.path.join(config.MODEL_SAVE_DIR, 'selected_feature_names.json')
+    with open(selected_features_path, 'w') as f:
+        json.dump(selected_features, f, indent=4)
+    print(f"Selected feature list saved to {selected_features_path}")        

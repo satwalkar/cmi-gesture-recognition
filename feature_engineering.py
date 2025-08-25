@@ -12,6 +12,7 @@ from statsmodels.tsa.stattools import acf
 from sklearn.decomposition import PCA
 import pandas as pd
 import umap
+import pywt
 
 # Import project-specific configuration
 import config
@@ -401,7 +402,7 @@ def _get_tof_dimensionality_reduction_features(df_seq: pl.DataFrame) -> dict:
 
             except Exception as e:
                 # If DR fails for any reason, create zero-filled features to maintain schema
-                # print(f"Warning: DR for {group_name} failed: {e}. Filling with zeros.")
+                print(f"Warning: DR for {group_name} failed: {e}. Filling with zeros.")
                 for i in range(config.TOF_DR_COMPONENTS):
                     features[f"{group_name}_{config.TOF_DR_METHOD}_component_{i+1}"] = 0.0
         else:
@@ -749,6 +750,10 @@ def _calculate_per_sequence_static_features(df_seq: pl.DataFrame) -> dict:
     if config.ENABLE_INTERACTION_FEATURES:
         new_static_features_dict.update(_get_interaction_features(df_seq))
 
+    if config.ENABLE_WAVELET_FEATURES:
+        imu_cols = [c for c in df_seq.columns if c.startswith(('acc_', 'rot_', 'lin_acc_'))]
+        new_static_features_dict.update(_get_wavelet_features(df_seq, imu_cols))
+
     return new_static_features_dict
 
 def _process_single_sequence_for_fe(df_seq_raw: pl.DataFrame, output_dir: str) -> str:
@@ -835,6 +840,20 @@ def _process_single_sequence_for_fe(df_seq_raw: pl.DataFrame, output_dir: str) -
     gc.collect()
 
     return output_file_path
+
+def _get_wavelet_features(df_seq: pl.DataFrame, cols: list) -> dict:
+    """Calculates statistical features from wavelet decomposition."""
+    features = {}
+    for col in cols:
+        signal = get_pl_data_as_np(df_seq, col)
+        if len(signal) > 1:
+            # Decompose the signal into approximation (cA) and detail (cD) coefficients
+            cA, cD = pywt.dwt(signal, 'db1')
+            features[f'{col}_wavelet_cA_mean'] = np.mean(cA)
+            features[f'{col}_wavelet_cA_std'] = np.std(cA)
+            features[f'{col}_wavelet_cD_mean'] = np.mean(cD)
+            features[f'{col}_wavelet_cD_std'] = np.std(cD)
+    return features
 
 def get_all_feature_columns(df_pl: pl.DataFrame) -> list[str]:
     """Dynamically gets all numerical feature columns from the DataFrame, excluding identifiers."""

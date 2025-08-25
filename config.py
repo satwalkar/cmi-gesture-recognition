@@ -7,9 +7,9 @@ ENV_PARAM = 0  # 1=Kaggle, 0=Local
 TRAIN = True   # Set to False for submission/inference
 
 # --- Framework Control Flags (for development) ---
-FORCE_RERUN_SETUP = True
-FORCE_RERUN_FEATURE_ENGINEERING = True
-FORCE_RERUN_INTER_SEQUENCE = True
+FORCE_RERUN_SETUP = False
+FORCE_RERUN_FEATURE_ENGINEERING = False
+FORCE_RERUN_INTER_SEQUENCE = False
 FORCE_RERUN_TRAINING = True
 FORCE_RERUN_ANALYSIS = True
 
@@ -77,7 +77,7 @@ ENABLE_DATA_AUGMENTATION = True # Add noise, time warping, magnitude scaling dur
 # Impact: They introduce highly predictive features but increase computational cost.
 # Recommended strategy: Start with basic stats, then enable advanced features one by one.
 ENABLE_BASIC_STATS = False # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
-ENABLE_DOMINANT_FFT_FEATURES = True # Controls dominant FFT amplitude and frequency features
+ENABLE_DOMINANT_FFT_FEATURES = False # Controls dominant FFT amplitude and frequency features
 ENABLE_COMPREHENSIVE_AUTOCORR = False # Autocorrelation at lag 1
 ENABLE_COMPREHENSIVE_MISSING_INDICATORS = False # Inactivity indicators for TOF/THM
 ENABLE_NOLDS_ENTROPY = False # Sample Entropy (requires nolds library)
@@ -145,6 +145,17 @@ ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_THM = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_TOF = False
 
+# Wavelet Transforms add features that describe how the frequency of a signal changes over time, which is excellent for complex gestures
+ENABLE_WAVELET_FEATURES = True
+
+# Automated Feature Selection: This adds a new pipeline stage to automatically select the most impactful features.
+ENABLE_FEATURE_SELECTION = False
+
+# 'gru', 'transformer', or 'hybrid'
+MODEL_TYPE = 'gru' 
+# 'simple' or 'bahdanau'
+ATTENTION_TYPE = 'simple' 
+
 # NEW Model & Training Configuration (from B.1, B.3, B.4)
 # CRITICAL: HPO_ENABLED.
 # Impact: Setting this to True automates the search for optimal hyperparameters. It's the most
@@ -163,7 +174,7 @@ TRANSFORMER_FF_DIM = 128 # Feed-forward dimension for Transformer block
 # Impact: These are arguably the most important training parameters. Cosine decay is generally
 # a good choice over a constant LR. A good starting LR is crucial.
 # Recommended range for DEFAULT_INITIAL_LEARNING_RATE: 1e-4, 5e-4, 1e-3 (current).
-DEFAULT_LR_SCHEDULE_TYPE = 'cosine_decay' # 'constant' or 'cosine_decay'
+DEFAULT_LR_SCHEDULE_TYPE = 'cosine_decay' # 'constant' or 'cosine_decay', or 'one_cycle'
 DEFAULT_INITIAL_LEARNING_RATE = 0.0005
 DEFAULT_COSINE_DECAY_EPOCHS = 75 # Number of epochs over which to decay for fixed schedule
 
@@ -229,4 +240,7 @@ FEATURE_CONFIG_KEYS = [
 
     # --- Data Shape Parameters ---
     'MAX_SEQUENCE_LENGTH'
+    
+    # Wavelet Transforms
+    'ENABLE_WAVELET_FEATURES'
 ]

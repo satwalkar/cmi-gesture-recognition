@@ -3,9 +3,6 @@ venv/
 /kaggle_env/
 env/
 
-# Environment files
-/environment.yml
-
 # Python cache files
 __pycache__/
 *.pyc

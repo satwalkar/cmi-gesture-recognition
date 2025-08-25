@@ -218,6 +218,54 @@ def attention_block(inputs):
 
     return output
 
+class BahdanauAttention(tf.keras.layers.Layer):
+    def __init__(self, units):
+        super(BahdanauAttention, self).__init__()
+        self.W1 = Dense(units)
+        self.W2 = Dense(units)
+        self.V = Dense(1)
+
+    def call(self, features, hidden):
+        hidden_with_time_axis = tf.expand_dims(hidden, 1)
+        score = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis))
+        attention_weights = tf.nn.softmax(self.V(score), axis=1)
+        context_vector = attention_weights * features
+        context_vector = tf.reduce_sum(context_vector, axis=1)
+        return context_vector, attention_weights
+
+class OneCycleLR(tf.keras.callbacks.Callback):
+    """
+    A custom Keras callback to implement the 1cycle learning rate policy.
+    """
+    def __init__(self, max_lr, total_steps, pct_start=0.3, div_factor=25.0, final_div_factor=1e4):
+        super(OneCycleLR, self).__init__()
+        self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.pct_start = pct_start
+        self.div_factor = div_factor
+        self.final_div_factor = final_div_factor
+        self.step_up = int(self.total_steps * self.pct_start)
+        self.step_down = self.total_steps - self.step_up
+
+    def on_train_begin(self, logs=None):
+        self.initial_lr = self.max_lr / self.div_factor
+        self.min_lr = self.initial_lr / self.final_div_factor
+        self.lrs = []
+        tf.keras.backend.set_value(self.model.optimizer.lr, self.initial_lr)
+
+    def on_batch_end(self, batch, logs=None):
+        step = tf.keras.backend.get_value(self.model.optimizer.iterations)
+        if step <= self.step_up:
+            # Ramp up phase
+            new_lr = self.initial_lr + (self.max_lr - self.initial_lr) * (step / self.step_up)
+        else:
+            # Ramp down phase
+            progress = (step - self.step_up) / self.step_down
+            new_lr = self.max_lr - (self.max_lr - self.min_lr) * progress
+        
+        tf.keras.backend.set_value(self.model.optimizer.lr, new_lr)
+        self.lrs.append(new_lr)
+        
 def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, num_classes: int):
     """
     Builds the Keras model for Hyperparameter Optimization (B.1).
@@ -282,7 +330,7 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
 
     #consider next
-    combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.4, max_value=0.6, step=0.1)
+    #combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.4, max_value=0.6, step=0.1)
 
     learning_rate_choice = hp.Choice('learning_rate_schedule', values=['cosine_decay', 'constant'], default='cosine_decay')
 
@@ -295,52 +343,87 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
 
     # Time Series Input Branch
     ts_input = Input(shape=ts_shape, name='time_series_input')
+
+    # --- 3. Build Initial Feature Extractor (common to all models) ---
     x = Conv1D(conv1d_filters_1, conv1d_kernel_1, activation='relu', padding='same', kernel_regularizer=l2_reg, kernel_initializer=initializer)(ts_input)
 
     # Use the selected normalization layer here
     x = InstanceNormalization()(x)
-
     x = Conv1D(conv1d_filters_2, conv1d_kernel_2, activation='relu', padding='same', kernel_regularizer=l2_reg, kernel_initializer=initializer)(x)
 
     # Hardcode InstanceNormalization for the time-series branch
     x = InstanceNormalization()(x)
 
-    # --- Time Series Branch: GRU or Transformer ---
-    if not config.ENABLE_TRANSFORMER_BLOCK: # Use Bidirectional GRU layers
+    # --- 4. Build the Core Sequential Branch (based on MODEL_TYPE) ---
+    # --- Time Series Branch: GRU, Transformer, or Hybrid  ---    
+    if config.MODEL_TYPE == 'gru':
+        print("Building GRU model...")
+        
+        # --- DEFINE GRU-specific hyperparameters HERE ---
+        gru_units_1 = hp.Int('gru_units_1', min_value=32, max_value=96, step=32, default=64)
+        gru_units_2 = hp.Int('gru_units_2', min_value=16, max_value=64, step=16, default=32)
+        ts_dropout_rate = hp.Float('ts_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
+        
+        # Now use them to build the layers
         x = Bidirectional(GRU(gru_units_1, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
         x = InstanceNormalization()(x)
         x = Bidirectional(GRU(gru_units_2, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
         x = InstanceNormalization()(x)
-        x = attention_block(x)
+        
+        # Apply the chosen attention mechanism
+        if config.ATTENTION_TYPE == 'simple':
+            x = attention_block(x)
+        else: # bahdanau
+            # Note: Bahdanau attention needs a query vector, often the last state of another RNN
+            query_gru = GRU(gru_units_1, return_sequences=False)(x)
+            x, _ = BahdanauAttention(128)(x, query_gru)
+        
         ts_features = Dropout(ts_dropout_rate)(x)
-    else: # Use Transformer Encoder
-        x = PositionalEmbedding(sequence_length=config.MAX_SEQUENCE_LENGTH, output_dim=transformer_embed_dim)(x)
-        x = TransformerEncoder(embed_dim=transformer_embed_dim, num_heads=transformer_num_heads,
+
+    elif config.MODEL_TYPE == 'transformer':
+        print("Building Transformer model...")
+        
+        # --- DEFINE Transformer-specific hyperparameters HERE ---
+        transformer_num_heads = hp.Choice('transformer_num_heads', values=[4, 8, 2], default=4)
+        transformer_ff_dim = hp.Int('transformer_ff_dim', min_value=128, max_value=384, step=128, default=256)
+        transformer_dropout_rate = hp.Float('transformer_dropout_rate', min_value=0.2, max_value=0.4, step=0.1, default=0.3)
+        
+        # Now use them to build the layers
+        x = PositionalEmbedding(sequence_length=config.MAX_SEQUENCE_LENGTH, output_dim=conv1d_filters_2)(x)
+        x = TransformerEncoder(embed_dim=conv1d_filters_2, num_heads=transformer_num_heads,
+                               ff_dim=transformer_ff_dim, rate=transformer_dropout_rate,
+                               kernel_initializer=initializer)(x)
+        x = attention_block(x) # Use simple attention to get a final context vector
+        ts_features = Dropout(combined_dropout_rate)(x)
+
+    elif config.MODEL_TYPE == 'hybrid':
+        print("Building Hybrid GRU-Transformer model...")
+        # First, process with GRU
+        x = Bidirectional(GRU(gru_units_1, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
+        x = InstanceNormalization()(x)
+        # Then, feed the result to the Transformer
+        x = TransformerEncoder(embed_dim=gru_units_1*2, num_heads=transformer_num_heads,
                                ff_dim=transformer_ff_dim, rate=transformer_dropout_rate,
                                kernel_initializer=initializer)(x)
         x = attention_block(x)
         ts_features = Dropout(combined_dropout_rate)(x)
 
-    # --- Conditional Demographics Branch ---
+    else:
+        raise ValueError(f"Invalid MODEL_TYPE in config: '{config.MODEL_TYPE}'. Choose 'gru', 'transformer', or 'hybrid'.")
+
+    # --- 5. Build the Demographics Branch and Final Classifier ---
     if config.ENABLE_DEMOGRAPHICS:
-        # If demographics are enabled, build the two-branch model
         demo_input = Input(shape=demo_shape, name='demographics_input')
         y = Dense(dense_units_demo, activation='relu', kernel_regularizer=l2_reg, kernel_initializer=initializer)(demo_input)
         y = BatchNormalization()(y)
-
-        # Combine branches
+        
         combined = Concatenate()([ts_features, y])
-
-        # Define the final classifier input and the model inputs
         final_classifier_input = combined
         model_inputs = [ts_input, demo_input]
     else:
-        # If demographics are disabled, build a single-branch model
         final_classifier_input = ts_features
         model_inputs = [ts_input]
 
-    # --- Final Classifier (Works for both cases) ---
-    # This block is now clean and uses the correct input variable
     z = Dropout(combined_dropout_rate)(final_classifier_input)
     z = Dense(combined_dense_units, activation='relu', kernel_regularizer=l2_reg, kernel_initializer=initializer)(z)
     output_layer = Dense(num_classes, activation='softmax', name='output')(z)

@@ -279,6 +279,7 @@ dependencies:
       - pillow==11.3.0
       - pynndescent==0.5.13
       - pyparsing==3.2.3
+      - pywavelets==1.8.0
       - safetensors==0.5.3
       - seaborn==0.13.2
       - shap==0.48.0
