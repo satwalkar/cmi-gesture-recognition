@@ -9,7 +9,7 @@ import shap
 import config
 import tensorflow as tf
 
-def _generate_and_save_confusion_matrix(oof_true_labels, oof_preds_labels, class_names, output_dir):
+def generate_and_save_confusion_matrix(oof_true_labels, oof_preds_labels, class_names, output_dir):
     """
     Computes, plots, and saves a normalized confusion matrix.
 
@@ -102,7 +102,7 @@ def calculate_permutation_importance(model, ts_data, demo_data, y_true, ts_featu
 
     return importance_df
 
-def _calculate_and_plot_permutation_importance(model, val_data, ts_feature_names, demo_feature_names, output_dir):
+def calculate_and_plot_permutation_importance(model, val_data, ts_feature_names, demo_feature_names, output_dir):
     """
     Calculates and plots permutation importance for a multi-input model.
 
@@ -137,7 +137,7 @@ def _calculate_and_plot_permutation_importance(model, val_data, ts_feature_names
     plt.show()
     print(f"Permutation importance plot saved to: {plot_path}")
 
-def _calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names, demo_feature_names, output_dir):
+def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names, demo_feature_names, output_dir):
     """
     Calculates and plots SHAP summary plots.
     This version includes the corrected reshaping logic for KernelExplainer.

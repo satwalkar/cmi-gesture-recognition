@@ -1006,7 +1006,7 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
     oof_preds_labels = np.argmax(all_oof_predictions, axis=1)
     oof_true_labels = np.argmax(all_oof_true_labels, axis=1)
     class_names = sorted(list(config.GESTURE_LABELS.keys()))
-    analysis_tools._generate_and_save_confusion_matrix(oof_true_labels, oof_preds_labels, class_names, config.MODEL_SAVE_DIR)
+    analysis_tools.generate_and_save_confusion_matrix(oof_true_labels, oof_preds_labels, class_names, config.MODEL_SAVE_DIR)
 
     # 3. Prepare Data and Model for Importance Analysis
     model_path = os.path.join(config.MODEL_SAVE_DIR, "main_model_fold_1.keras")
@@ -1087,7 +1087,7 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
     demo_feature_names = list(demographics_processed_all.columns) if demographics_processed_all is not None else []
 
     # 4. Run Permutation Importance and SHAP Analyses
-    analysis_tools._calculate_and_plot_permutation_importance(model_for_importance, (sample_ts_data, sample_demo_data, sample_labels), ts_feature_names, demo_feature_names, config.MODEL_SAVE_DIR)
+    analysis_tools.calculate_and_plot_permutation_importance(model_for_importance, (sample_ts_data, sample_demo_data, sample_labels), ts_feature_names, demo_feature_names, config.MODEL_SAVE_DIR)
 
     # For SHAP, we need a smaller background and explain set
     num_background = min(100, len(sample_ts_data))
@@ -1107,7 +1107,7 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
         background_demo = np.array([])
         explain_demo = np.array([])
 
-    analysis_tools._calculate_and_plot_shap_values(model_for_importance, (background_ts, background_demo), (explain_ts, explain_demo), ts_feature_names, demo_feature_names, config.MODEL_SAVE_DIR)
+    analysis_tools.calculate_and_plot_shap_values(model_for_importance, (background_ts, background_demo), (explain_ts, explain_demo), ts_feature_names, demo_feature_names, config.MODEL_SAVE_DIR)
 
     print("Analysis stage complete.")
 

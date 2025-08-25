@@ -8,7 +8,6 @@ from tensorflow.keras.layers import (
     MultiHeadAttention, Embedding, Reshape
 )
 from tensorflow.keras.regularizers import l2
-from tensorflow.keras.optimizers.schedules import CosineDecay
 
 import config
 
