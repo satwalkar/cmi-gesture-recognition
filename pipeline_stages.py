@@ -367,40 +367,31 @@ def run_feature_engineering_stage(sequence_info_all_pd):
     current_config = _get_current_feature_config()
     force_regeneration = config.FORCE_RERUN_FEATURE_ENGINEERING
 
-    # --- Path A: Check if the job is already 100% complete and up-to-date ---
-    final_artifacts_exist = os.path.exists(config_file_path) and os.path.exists(config.FEATURE_NAMES_FILE_PATH)
-
-    if not force_regeneration and final_artifacts_exist:
+    # --- 1. Check for configuration changes FIRST ---
+    config_changed = False
+    if os.path.exists(config_file_path):
         with open(config_file_path, 'r') as f:
             saved_config = json.load(f)
-        if saved_config == current_config:
-            print("✅ All features are already generated and up-to-date. Skipping.")
-            return # The job is done, exit successfully.
+        if saved_config != current_config:
+            config_changed = True
+            print("⚙️ Configuration has changed.")
 
-    # --- Path B: The job is incomplete, forced, or the config has changed ---
-
-    # If the config has changed or a full rerun is forced, we must start fresh.
-    if force_regeneration or (final_artifacts_exist and saved_config != current_config):
-        print("⚙️ Configuration has changed or a force rerun is triggered. Starting a fresh run.")
+    # A full, clean regeneration is required if forced OR if the config has changed.
+    if force_regeneration or config_changed:
+        print("Starting a fresh feature generation run...")
         if os.path.exists(feature_output_dir):
             shutil.rmtree(feature_output_dir)
-
-    # 1. Get all sequence IDs required by the metadata
+    
+    # --- 2. Now, proceed with the resumable logic ---
     all_required_ids = set(sequence_info_all_pd.index.to_list())
     os.makedirs(feature_output_dir, exist_ok=True)
-
-    # 2. Find which feature files already exist on disk
-
+    
     existing_files = [f for f in os.listdir(feature_output_dir) if f.endswith('.parquet')]
     existing_ids = set(f.removeprefix('seq_').removesuffix('_features.parquet') for f in existing_files)
-
-    # 3. Determine which sequences are missing and need to be processed
     missing_ids = list(all_required_ids - existing_ids)
 
-    # 4. Run the parallel job ONLY for the missing sequences
     if not missing_ids:
-        print("All Parquet files exist, proceeding to finalize metadata.")
-
+        print("✅ All feature files already exist and are up-to-date.")
     else:
         print(f"Found {len(existing_ids)} existing files. Processing {len(missing_ids)} missing sequences...")
 
@@ -449,7 +440,6 @@ def run_feature_engineering_stage(sequence_info_all_pd):
         with open(config.FEATURE_NAMES_FILE_PATH, 'w') as f:
             json.dump(feature_names, f, indent=4)
         print(f"List of {len(feature_names)} feature names saved.")
-
     else:
         print(f"⚠️ Warning: Process still incomplete. {len(all_required_ids) - final_files_count} files still missing.")
 
