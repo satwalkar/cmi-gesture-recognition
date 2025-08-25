@@ -150,24 +150,28 @@ def _calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_name
     explain_ts, explain_demo = val_data
 
     try:
+        shap_values_ts = None
+        shap_values_demo = None
+
         if config.SHAP_EXPLAINER_TYPE == 'deep':
-            # Conditionally prepare the background data for the explainer
             if background_demo.size > 0:
-                explainer_inputs = [
-                    tf.convert_to_tensor(background_ts, dtype=tf.float32), 
-                    tf.convert_to_tensor(background_demo, dtype=tf.float32)
-                ]
-                # Prepare the data to be explained (the validation data)
-                explain_inputs = {
-                    'time_series_input': tf.convert_to_tensor(explain_ts, dtype=tf.float32), 
-                    'demographics_input': tf.convert_to_tensor(explain_demo, dtype=tf.float32)
-                }
+                explainer_inputs = [tf.convert_to_tensor(d, dtype=tf.float32) for d in [background_ts, background_demo]]
+                explain_inputs = {'time_series_input': tf.convert_to_tensor(explain_ts, dtype=tf.float32), 
+                                  'demographics_input': tf.convert_to_tensor(explain_demo, dtype=tf.float32)}
             else:
                 explainer_inputs = tf.convert_to_tensor(background_ts, dtype=tf.float32)
                 explain_inputs = tf.convert_to_tensor(explain_ts, dtype=tf.float32)
 
             explainer = shap.DeepExplainer(model, explainer_inputs)
             shap_values = explainer.shap_values(explain_inputs)
+            
+            # --- THIS IS THE FIX ---
+            # Correctly unpack the results from DeepExplainer
+            if isinstance(shap_values, list) and len(shap_values) > 1:
+                shap_values_ts, shap_values_demo = shap_values[0], shap_values[1]
+            else:
+                shap_values_ts = shap_values
+            # ------------------------
 
         elif config.SHAP_EXPLAINER_TYPE == 'kernel':
             def predict_wrapper(X_flattened):
