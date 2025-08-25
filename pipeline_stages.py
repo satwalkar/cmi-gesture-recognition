@@ -933,6 +933,10 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
     Orchestrates post-training analysis by calling modular helper functions.
     Consolidates OOF predictions and runs CM, Permutation Importance, and SHAP analyses.
     """
+    
+    # This now correctly reads the populated dictionary from the config module
+    class_names = sorted(list(config.GESTURE_LABELS.keys()))
+    
     print("\n" + "="*80 + "\n--- STAGE 5: Post-Training Analysis ---\n" + "="*80)
 
     cm_plot_path = os.path.join(config.MODEL_SAVE_DIR, "confusion_matrix.png")

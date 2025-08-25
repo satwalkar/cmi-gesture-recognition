@@ -7,6 +7,7 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 import shap
 import config
+import tensorflow as tf
 
 def _generate_and_save_confusion_matrix(oof_true_labels, oof_preds_labels, class_names, output_dir):
     """
@@ -149,24 +150,24 @@ def _calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_name
     explain_ts, explain_demo = val_data
 
     try:
-        shap_values_ts = None
-        shap_values_demo = None
-
         if config.SHAP_EXPLAINER_TYPE == 'deep':
+            # Conditionally prepare the background data for the explainer
             if background_demo.size > 0:
-                explainer_inputs = [background_ts, background_demo]
-                shap_inputs = {'time_series_input': explain_ts, 'demographics_input': explain_demo}
+                explainer_inputs = [
+                    tf.convert_to_tensor(background_ts, dtype=tf.float32), 
+                    tf.convert_to_tensor(background_demo, dtype=tf.float32)
+                ]
+                # Prepare the data to be explained (the validation data)
+                explain_inputs = {
+                    'time_series_input': tf.convert_to_tensor(explain_ts, dtype=tf.float32), 
+                    'demographics_input': tf.convert_to_tensor(explain_demo, dtype=tf.float32)
+                }
             else:
-                explainer_inputs = background_ts
-                shap_inputs = explain_ts
+                explainer_inputs = tf.convert_to_tensor(background_ts, dtype=tf.float32)
+                explain_inputs = tf.convert_to_tensor(explain_ts, dtype=tf.float32)
 
             explainer = shap.DeepExplainer(model, explainer_inputs)
-            shap_values = explainer.shap_values(shap_inputs)
-
-            if isinstance(shap_values, list) and len(shap_values) > 1:
-                shap_values_ts, shap_values_demo = shap_values[0], shap_values[1]
-            else:
-                shap_values_ts = shap_values
+            shap_values = explainer.shap_values(explain_inputs)
 
         elif config.SHAP_EXPLAINER_TYPE == 'kernel':
             def predict_wrapper(X_flattened):
