@@ -359,6 +359,9 @@ def run_feature_engineering_stage(sequence_info_all_pd):
     Orchestrates a robust and resumable feature engineering process.
     - Forces a full, clean regeneration if the config.py file has changed. and running parallel processing if they need to be regenerated.
     - Resumes an interrupted run by only processing missing files if the config is the same.
+    - Guarantees a full, clean regeneration if the config.py file has changed.
+    - Safely resumes an interrupted run ONLY if the config can be verified.    
+    - Final, robust, and resumable feature engineering. Guarantees a full, clean regeneration if the config changes or if a previous run is in an ambiguous, interrupted state.    
     """
     print("\n" + "="*80 + "\n--- STAGE 2: Feature Engineering (Robust & Resumable) ---\n" + "="*80)
 
@@ -367,24 +370,39 @@ def run_feature_engineering_stage(sequence_info_all_pd):
     current_config = _get_current_feature_config()
     force_regeneration = config.FORCE_RERUN_FEATURE_ENGINEERING
 
-    # --- 1. Check for configuration changes FIRST ---
-    config_changed = False
+    # --- 1. Determine the state of the feature set ---
+    saved_config = None
     if os.path.exists(config_file_path):
         with open(config_file_path, 'r') as f:
             saved_config = json.load(f)
-        if saved_config != current_config:
-            config_changed = True
-            print("⚙️ Configuration has changed.")
+            
+    # Check for any existing parquet files
+    os.makedirs(feature_output_dir, exist_ok=True)
+    parquet_files_exist = any(f.endswith('.parquet') for f in os.listdir(feature_output_dir))
 
-    # A full, clean regeneration is required if forced OR if the config has changed.
-    if force_regeneration or config_changed:
-        print("Starting a fresh feature generation run...")
+    # --- 2. Decide if a full, clean rerun is required ---
+    # A full rerun is needed if:
+    #   A) The user forces it.
+    #   B) A config file exists, but it doesn't match the current config.
+    #   C) No config file exists, BUT some parquet files exist (the ambiguous interrupted state).
+    
+    if force_regeneration or \
+       (saved_config is not None and saved_config != current_config) or \
+       (saved_config is None and parquet_files_exist):
+        
+        if force_regeneration:
+            print("⚙️ Rerun is forced. Starting a fresh run.")
+        elif saved_config is not None and saved_config != current_config:
+            print("⚙️ Configuration has changed. Starting a fresh run.")
+        else:
+            print("⚙️ Ambiguous state detected (partial files exist without a config file). Starting a fresh run to ensure data integrity.")
+
         if os.path.exists(feature_output_dir):
             shutil.rmtree(feature_output_dir)
-    
-    # --- 2. Now, proceed with the resumable logic ---
+        os.makedirs(feature_output_dir)
+
+    # --- 3. Proceed with resumable logic on what is now a clean or valid resumable directory ---
     all_required_ids = set(sequence_info_all_pd.index.to_list())
-    os.makedirs(feature_output_dir, exist_ok=True)
     
     existing_files = [f for f in os.listdir(feature_output_dir) if f.endswith('.parquet')]
     existing_ids = set(f.removeprefix('seq_').removesuffix('_features.parquet') for f in existing_files)

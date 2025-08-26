@@ -77,9 +77,9 @@ ENABLE_DATA_AUGMENTATION = True # Add noise, time warping, magnitude scaling dur
 # Impact: They introduce highly predictive features but increase computational cost.
 # Recommended strategy: Start with basic stats, then enable advanced features one by one.
 ENABLE_BASIC_STATS = True # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
-ENABLE_DOMINANT_FFT_FEATURES = False # Controls dominant FFT amplitude and frequency features
+ENABLE_DOMINANT_FFT_FEATURES = True # Controls dominant FFT amplitude and frequency features
 ENABLE_COMPREHENSIVE_AUTOCORR = True # Autocorrelation at lag 1
-ENABLE_COMPREHENSIVE_MISSING_INDICATORS = False # Inactivity indicators for TOF/THM
+ENABLE_COMPREHENSIVE_MISSING_INDICATORS = True # Inactivity indicators for TOF/THM
 ENABLE_NOLDS_ENTROPY = False # Sample Entropy (requires nolds library)
 ENABLE_COMPREHENSIVE_WINDOWED_STATS = False # Aggregated statistics over sliding windows
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL = False # Enhanced frequency domain features (energy bands, centroids, etc.)
