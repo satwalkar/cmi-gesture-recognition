@@ -8,6 +8,7 @@ from tensorflow.keras.layers import (
     MultiHeadAttention, Embedding, Reshape
 )
 from tensorflow.keras.regularizers import l2
+from tensorflow.keras.optimizers.schedules import CosineDecay
 
 import config
 
@@ -292,6 +293,9 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     combined_dense_units = hp.Choice('combined_dense_units', values=[64, 96, 128], default=64)
     combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
     
+    hp.Choice('learning_rate_schedule', values=['cosine_decay', 'constant'], default='cosine_decay')
+    hp.Float('initial_learning_rate', min_value=3e-4, max_value=2e-3, sampling='log', default=5e-4)
+    
     # --- 2. Define Common Arguments ---
     l2_reg = l2(l2_reg_strength)
     initializer = tf.keras.initializers.GlorotUniform(seed=config.RANDOM_STATE)
@@ -355,7 +359,21 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
 
     model = Model(inputs=model_inputs, outputs=output_layer)
     
-    # Return the UNCOMPILED model. Compilation is handled in the training stage.
+    # --- 4. THIS IS THE FIX: Compile the model INSIDE the builder ---
+    learning_rate_choice = hp.get('learning_rate_schedule')
+    initial_learning_rate = hp.get('initial_learning_rate')    
+    
+    if learning_rate_choice == 'cosine_decay':
+        # For HPO, we use a placeholder decay_steps.
+        # This will be overridden correctly in the K-Fold path.
+        lr_schedule = CosineDecay(initial_learning_rate, decay_steps=1000)
+    else: # 'constant'
+        lr_schedule = initial_learning_rate
+        
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, clipnorm=1.0)
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    # Return the compiled model, ready for training or tuning.
     return model
 
 """    

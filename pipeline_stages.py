@@ -412,26 +412,35 @@ def run_feature_engineering_stage(sequence_info_all_pd):
         print("✅ All feature files already exist and are up-to-date.")
     else:
         print(f"Found {len(existing_ids)} existing files. Processing {len(missing_ids)} missing sequences...")
+        ids_to_process = missing_ids
 
-        df_pl = data_utils.load_data(is_full_data=True)
+        if ids_to_process:
+            df_pl = data_utils.load_data(is_full_data=True)
+    
+            if df_pl is None or df_pl.height == 0:
+                raise ValueError("Data loading returned an empty DataFrame. Cannot proceed.")
+    
+            # Pre-fill missing sensor data to prevent errors in feature calculations
+            print("Applying forward/backward fill to raw sensor data...")
+            for col in config.ALL_RAW_SENSOR_COLS:
+                if col in df_pl.columns:
+                    df_pl = df_pl.with_columns(pl.col(col).fill_null(strategy="forward").over("sequence_id"))
+                    df_pl = df_pl.with_columns(pl.col(col).fill_null(strategy="backward").over("sequence_id"))
+            df_pl = df_pl.fill_null(0.0)
 
-        if df_pl is None or df_pl.height == 0:
-            raise ValueError("Data loading returned an empty DataFrame. Cannot proceed.")
-
-        # Pre-fill missing sensor data to prevent errors in feature calculations
-        print("Applying forward/backward fill to raw sensor data...")
-        for col in config.ALL_RAW_SENSOR_COLS:
-            if col in df_pl.columns:
-                df_pl = df_pl.with_columns(pl.col(col).fill_null(strategy="forward").over("sequence_id"))
-                df_pl = df_pl.with_columns(pl.col(col).fill_null(strategy="backward").over("sequence_id"))
-        df_pl = df_pl.fill_null(0.0)
-
-        joblib.Parallel(n_jobs=-1, verbose=0)(
-            joblib.delayed(feature_engineering._process_single_sequence_for_fe)(
-                df_pl.filter(pl.col('sequence_id') == seq_id),
-                feature_output_dir
-            ) for seq_id in tqdm(missing_ids, desc="Generating Missing Features")
-        )
+            # Ensure we only process IDs that are actually present in the raw data
+            valid_ids_in_data = set(df_pl['sequence_id'].unique().to_list())
+            final_ids_to_process = [id for id in ids_to_process if id in valid_ids_in_data]
+            
+            if len(final_ids_to_process) != len(ids_to_process):
+                print(f"Warning: {len(ids_to_process) - len(final_ids_to_process)} sequence IDs from metadata were not found in the data file and will be skipped.")
+                
+            joblib.Parallel(n_jobs=-1, verbose=0)(
+                joblib.delayed(feature_engineering._process_single_sequence_for_fe)(
+                    df_pl.filter(pl.col('sequence_id') == seq_id),
+                    feature_output_dir
+                ) for seq_id in tqdm(final_ids_to_process, desc="Generating Missing Features")
+            )
         del df_pl
         gc.collect()
 
@@ -746,6 +755,25 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
             stratify=sequence_info_all_pd['gesture_encoded']
         )
         print(f"HPO split: {len(hpo_train_ids)} training sequences, {len(hpo_val_ids)} validation sequences.")
+
+        print("\n➡️ Step 1/4: Loading training set Parquet files...")
+        train_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f"seq_{sid}_features.parquet") for sid in hpo_train_ids]
+        train_data_pl = pl.read_parquet(train_files)
+        
+        print("➡️ Step 2/4: Loading validation set Parquet files...")
+        val_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f"seq_{sid}_features.parquet") for sid in hpo_val_ids]
+        val_data_pl = pl.read_parquet(val_files)
+  
+        print("➡️ Step 3/4: Fitting the data scaler...")
+        ts_scaler = StandardScaler().fit(train_data_pl.select(feature_columns).to_numpy())
+        
+        print("➡️ Step 4/4: Building in-memory data cache...")
+        combined_data_pl = pl.concat([train_data_pl, val_data_pl])
+        data_cache = {
+            sid[0]: ts_scaler.transform(g.select(feature_columns).to_numpy(allow_copy=True)).astype(np.float32)
+            for sid, g in combined_data_pl.group_by("sequence_id")
+        }
+        print("✅ Data preparation complete. Initializing Keras Tuner.")
 
         # 2. Load only the necessary data for this split
         train_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f"seq_{sid}_features.parquet") for sid in hpo_train_ids]
