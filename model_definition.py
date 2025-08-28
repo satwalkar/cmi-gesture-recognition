@@ -262,7 +262,7 @@ class OneCycleLR(tf.keras.callbacks.Callback):
             # Ramp down phase
             progress = (step - self.step_up) / self.step_down
             new_lr = self.max_lr - (self.max_lr - self.min_lr) * progress
-        
+
         tf.keras.backend.set_value(self.model.optimizer.lr, new_lr)
         self.lrs.append(new_lr)
 
@@ -272,30 +272,32 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     This version has a clean, unified structure.
     """
     # --- 1. Define Full Hyperparameter Search Space (ONCE) ---
-    l2_reg_strength = hp.Choice('l2_reg', values=[1e-4, 1e-5, 1e-3], default=1e-4)
+    # l2_reg_strength = hp.Choice('l2_reg', values=[1e-4, 1e-5, 1e-3], default=1e-4)
+    l2_reg_strength = hp.Choice('l2_reg', values=[1e-3, 5e-4, 1e-4], default=1e-3) # Prioritize stronger values
     conv1d_filters_1 = hp.Choice('conv1d_filters_1', values=[32, 48, 64], default=32)
     conv1d_kernel_1 = hp.Choice('conv1d_kernel_1', values=[5, 3], default=5)
     conv1d_filters_2 = hp.Choice('conv1d_filters_2', values=[64, 96, 128], default=64)
     conv1d_kernel_2 = hp.Choice('conv1d_kernel_2', values=[3, 5], default=3)
-    
+
     # GRU-specific HPs
     gru_units_1 = hp.Int('gru_units_1', min_value=32, max_value=96, step=32, default=64)
     gru_units_2 = hp.Int('gru_units_2', min_value=16, max_value=64, step=16, default=32)
     ts_dropout_rate = hp.Float('ts_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
-    
+
     # Transformer-specific HPs
     transformer_num_heads = hp.Choice('transformer_num_heads', values=[4, 8, 2], default=4)
     transformer_ff_dim = hp.Int('transformer_ff_dim', min_value=128, max_value=384, step=128, default=256)
     transformer_dropout_rate = hp.Float('transformer_dropout_rate', min_value=0.2, max_value=0.4, step=0.1, default=0.3)
-    
+
     # Final classifier HPs
     dense_units_demo = hp.Choice('dense_units_demo', values=[16, 32], default=16)
     combined_dense_units = hp.Choice('combined_dense_units', values=[64, 96, 128], default=64)
-    combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
-    
+    # combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
+    combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.4, max_value=0.6, step=0.1, default=0.5)
+
     hp.Choice('learning_rate_schedule', values=['cosine_decay', 'constant'], default='cosine_decay')
     hp.Float('initial_learning_rate', min_value=3e-4, max_value=2e-3, sampling='log', default=5e-4)
-    
+
     # --- 2. Define Common Arguments ---
     l2_reg = l2(l2_reg_strength)
     initializer = tf.keras.initializers.GlorotUniform(seed=config.RANDOM_STATE)
@@ -313,7 +315,7 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
         x = InstanceNormalization()(x)
         x = Bidirectional(GRU(gru_units_2, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
         x = InstanceNormalization()(x)
-        
+
         if config.ATTENTION_TYPE == 'simple':
             x = attention_block(x)
         else: # bahdanau
@@ -358,27 +360,28 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     output_layer = Dense(num_classes, activation='softmax', name='output')(z)
 
     model = Model(inputs=model_inputs, outputs=output_layer)
-    
+
     # --- 4. THIS IS THE FIX: Compile the model INSIDE the builder ---
     learning_rate_choice = hp.get('learning_rate_schedule')
-    initial_learning_rate = hp.get('initial_learning_rate')    
-    
+    initial_learning_rate = hp.get('initial_learning_rate')
+
     if learning_rate_choice == 'cosine_decay':
         # For HPO, we use a placeholder decay_steps.
         # This will be overridden correctly in the K-Fold path.
         lr_schedule = CosineDecay(initial_learning_rate, decay_steps=1000)
     else: # 'constant'
         lr_schedule = initial_learning_rate
-        
+
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule, clipnorm=1.0)
-    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
-    
+    # model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1), metrics=['accuracy'])
+
     # Return the compiled model, ready for training or tuning.
     return model
 
-"""    
+"""
 def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, num_classes: int):
-    
+
     # Builds the Keras model for Hyperparameter Optimization (B.1).
     # Incorporates Transformer block and Multi-Head Attention (B.3, B.4).
     # This function now dynamically chooses the normalization layer based on `NORMALIZATION_LAYER_TYPE`.
@@ -466,21 +469,21 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     x = InstanceNormalization()(x)
 
     # --- 4. Build the Core Sequential Branch (based on MODEL_TYPE) ---
-    # --- Time Series Branch: GRU, Transformer, or Hybrid  ---    
+    # --- Time Series Branch: GRU, Transformer, or Hybrid  ---
     if config.MODEL_TYPE == 'gru':
         print("Building GRU model...")
-        
+
         # --- DEFINE GRU-specific hyperparameters HERE ---
         gru_units_1 = hp.Int('gru_units_1', min_value=32, max_value=96, step=32, default=64)
         gru_units_2 = hp.Int('gru_units_2', min_value=16, max_value=64, step=16, default=32)
         ts_dropout_rate = hp.Float('ts_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
-        
+
         # Now use them to build the layers
         x = Bidirectional(GRU(gru_units_1, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
         x = InstanceNormalization()(x)
         x = Bidirectional(GRU(gru_units_2, return_sequences=True, kernel_regularizer=l2_reg, kernel_initializer=initializer))(x)
         x = InstanceNormalization()(x)
-        
+
         # Apply the chosen attention mechanism
         if config.ATTENTION_TYPE == 'simple':
             x = attention_block(x)
@@ -488,17 +491,17 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
             # Note: Bahdanau attention needs a query vector, often the last state of another RNN
             query_gru = GRU(gru_units_1, return_sequences=False)(x)
             x, _ = BahdanauAttention(128)(x, query_gru)
-        
+
         ts_features = Dropout(ts_dropout_rate)(x)
 
     elif config.MODEL_TYPE == 'transformer':
         print("Building Transformer model...")
-        
+
         # --- DEFINE Transformer-specific hyperparameters HERE ---
         transformer_num_heads = hp.Choice('transformer_num_heads', values=[4, 8, 2], default=4)
         transformer_ff_dim = hp.Int('transformer_ff_dim', min_value=128, max_value=384, step=128, default=256)
         transformer_dropout_rate = hp.Float('transformer_dropout_rate', min_value=0.2, max_value=0.4, step=0.1, default=0.3)
-        
+
         # Now use them to build the layers
         x = PositionalEmbedding(sequence_length=config.MAX_SEQUENCE_LENGTH, output_dim=conv1d_filters_2)(x)
         x = TransformerEncoder(embed_dim=conv1d_filters_2, num_heads=transformer_num_heads,
@@ -527,7 +530,7 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
         demo_input = Input(shape=demo_shape, name='demographics_input')
         y = Dense(dense_units_demo, activation='relu', kernel_regularizer=l2_reg, kernel_initializer=initializer)(demo_input)
         y = BatchNormalization()(y)
-        
+
         combined = Concatenate()([ts_features, y])
         final_classifier_input = combined
         model_inputs = [ts_input, demo_input]
@@ -560,4 +563,3 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     # model.summary() # Commented out to avoid verbose output during HPO
     return model
 """
-    

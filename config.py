@@ -7,7 +7,7 @@ ENV_PARAM = 0  # 1=Kaggle, 0=Local
 TRAIN = True   # Set to False for submission/inference
 
 # --- Framework Control Flags (for development) ---
-FORCE_RERUN_SETUP = True
+FORCE_RERUN_SETUP = False
 FORCE_RERUN_FEATURE_ENGINEERING = False
 FORCE_RERUN_INTER_SEQUENCE = False
 FORCE_RERUN_TRAINING = False
@@ -46,7 +46,7 @@ RANDOM_STATE = 42 # Seed for reproducibility
 # CRITICAL: GLOBAL_BATCH_SIZE.
 # Impact: Affects training speed, memory usage, and convergence stability.
 # Recommended range: 32, 64 (current), 128.
-GLOBAL_BATCH_SIZE = 32 # Batch size for training
+GLOBAL_BATCH_SIZE = 16 # Batch size for training
 
 WORKERS_AUTOTUNE = tf.data.AUTOTUNE # For tf.data.Dataset prefetching
 
@@ -80,7 +80,7 @@ ENABLE_BASIC_STATS = True # Controls global statistical features (mean, std, min
 ENABLE_DOMINANT_FFT_FEATURES = True # Controls dominant FFT amplitude and frequency features
 ENABLE_COMPREHENSIVE_AUTOCORR = True # Autocorrelation at lag 1
 ENABLE_COMPREHENSIVE_MISSING_INDICATORS = True # Inactivity indicators for TOF/THM
-ENABLE_NOLDS_ENTROPY = False # Sample Entropy (requires nolds library)
+ENABLE_NOLDS_ENTROPY = True # Sample Entropy (requires nolds library)
 ENABLE_COMPREHENSIVE_WINDOWED_STATS = False # Aggregated statistics over sliding windows
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL = False # Enhanced frequency domain features (energy bands, centroids, etc.)
 ENABLE_COMPREHENSIVE_CORRELATIONS = True # Cross-axis correlations
@@ -101,7 +101,7 @@ TOF_DR_METHOD = 'umap' # 'pca' or 'umap' (if umap-learn is installed)
 TOF_DR_COMPONENTS = 3 # Number of components for TOF DR
 ENABLE_TOF_SHAPE_FEATURES = False # A.2. Extract features describing the "shape" of TOF signal
 ENABLE_THM_SPATIAL_TEMPORAL_FEATURES = False # A.3. Spatial/temporal features for THM sensors
-ENABLE_INTERACTION_FEATURES = False # A.4. Interaction features between sensor types
+ENABLE_INTERACTION_FEATURES = True # A.4. Interaction features between sensor types
 
 # NEW: Control for dropping raw TOF features after derivation
 # Set this to True to use ONLY derived TOF features (like PCA, shape, etc.)
@@ -131,7 +131,7 @@ ENABLE_COMPREHENSIVE_FFT_SPECTRAL_THM = False
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL_TOF = False
 
 # Autocorrelation
-ENABLE_COMPREHENSIVE_AUTOCORR_IMU = False
+ENABLE_COMPREHENSIVE_AUTOCORR_IMU = True
 ENABLE_COMPREHENSIVE_AUTOCORR_THM = False
 ENABLE_COMPREHENSIVE_AUTOCORR_TOF = False
 
@@ -141,7 +141,7 @@ ENABLE_NOLDS_ENTROPY_THM = False
 ENABLE_NOLDS_ENTROPY_TOF = False
 
 # Windowed Statistics
-ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = False
+ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = True
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_THM = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_TOF = False
 
@@ -152,9 +152,9 @@ ENABLE_WAVELET_FEATURES = True
 ENABLE_FEATURE_SELECTION = False
 
 # 'gru', 'transformer', or 'hybrid'
-MODEL_TYPE = 'gru' 
+MODEL_TYPE = 'hybrid'
 # 'simple' or 'bahdanau'
-ATTENTION_TYPE = 'simple' 
+ATTENTION_TYPE = 'bahdanau'
 
 # NEW Model & Training Configuration (from B.1, B.3, B.4)
 # CRITICAL: HPO_ENABLED.
@@ -240,7 +240,7 @@ FEATURE_CONFIG_KEYS = [
 
     # --- Data Shape Parameters ---
     'MAX_SEQUENCE_LENGTH'
-    
+
     # Wavelet Transforms
     'ENABLE_WAVELET_FEATURES'
 ]

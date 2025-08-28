@@ -372,7 +372,7 @@ def _get_tof_dimensionality_reduction_features(df_seq: pl.DataFrame) -> dict:
                 # CRITICAL STEP: We compute the average signal shape across time FIRST.
                 # This gives us a single (1, 64) vector representing the gesture's TOF profile.
                 tof_signal_shape = df_seq.select(existing_tof_bins).mean().to_numpy(allow_copy=True)
-                
+
                 # Check for constant data (no variance) which would cause DR to fail
                 if np.std(tof_signal_shape) < 1e-9:
                     raise ValueError("TOF signal has no variance.")
@@ -380,11 +380,11 @@ def _get_tof_dimensionality_reduction_features(df_seq: pl.DataFrame) -> dict:
                 if config.TOF_DR_METHOD == 'pca':
                     reducer = PCA(n_components=config.TOF_DR_COMPONENTS, random_state=config.RANDOM_STATE)
                     reduced_components = reducer.fit_transform(tof_signal_shape)
-                
+
                 elif config.TOF_DR_METHOD == 'umap':
                     # This is the new, complete UMAP implementation
                     reducer = umap.UMAP(
-                        n_components=config.TOF_DR_COMPONENTS, 
+                        n_components=config.TOF_DR_COMPONENTS,
                         n_neighbors=min(15, df_seq.height - 1), # n_neighbors must be smaller than sample size
                         min_dist=0.1,
                         metric='euclidean',
@@ -409,7 +409,7 @@ def _get_tof_dimensionality_reduction_features(df_seq: pl.DataFrame) -> dict:
             # If there isn't enough data, create zero-filled features
             for i in range(config.TOF_DR_COMPONENTS):
                 features[f"{group_name}_{config.TOF_DR_METHOD}_component_{i+1}"] = 0.0
-                
+
     return features
 
 def _get_tof_shape_features(df_seq: pl.DataFrame) -> dict:

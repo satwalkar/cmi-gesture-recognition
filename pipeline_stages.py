@@ -360,8 +360,8 @@ def run_feature_engineering_stage(sequence_info_all_pd):
     - Forces a full, clean regeneration if the config.py file has changed. and running parallel processing if they need to be regenerated.
     - Resumes an interrupted run by only processing missing files if the config is the same.
     - Guarantees a full, clean regeneration if the config.py file has changed.
-    - Safely resumes an interrupted run ONLY if the config can be verified.    
-    - Final, robust, and resumable feature engineering. Guarantees a full, clean regeneration if the config changes or if a previous run is in an ambiguous, interrupted state.    
+    - Safely resumes an interrupted run ONLY if the config can be verified.
+    - Final, robust, and resumable feature engineering. Guarantees a full, clean regeneration if the config changes or if a previous run is in an ambiguous, interrupted state.
     """
     print("\n" + "="*80 + "\n--- STAGE 2: Feature Engineering (Robust & Resumable) ---\n" + "="*80)
 
@@ -375,7 +375,7 @@ def run_feature_engineering_stage(sequence_info_all_pd):
     if os.path.exists(config_file_path):
         with open(config_file_path, 'r') as f:
             saved_config = json.load(f)
-            
+
     # Check for any existing parquet files
     os.makedirs(feature_output_dir, exist_ok=True)
     parquet_files_exist = any(f.endswith('.parquet') for f in os.listdir(feature_output_dir))
@@ -385,11 +385,11 @@ def run_feature_engineering_stage(sequence_info_all_pd):
     #   A) The user forces it.
     #   B) A config file exists, but it doesn't match the current config.
     #   C) No config file exists, BUT some parquet files exist (the ambiguous interrupted state).
-    
+
     if force_regeneration or \
        (saved_config is not None and saved_config != current_config) or \
        (saved_config is None and parquet_files_exist):
-        
+
         if force_regeneration:
             print("⚙️ Rerun is forced. Starting a fresh run.")
         elif saved_config is not None and saved_config != current_config:
@@ -403,7 +403,7 @@ def run_feature_engineering_stage(sequence_info_all_pd):
 
     # --- 3. Proceed with resumable logic on what is now a clean or valid resumable directory ---
     all_required_ids = set(sequence_info_all_pd.index.to_list())
-    
+
     existing_files = [f for f in os.listdir(feature_output_dir) if f.endswith('.parquet')]
     existing_ids = set(f.removeprefix('seq_').removesuffix('_features.parquet') for f in existing_files)
     missing_ids = list(all_required_ids - existing_ids)
@@ -416,10 +416,10 @@ def run_feature_engineering_stage(sequence_info_all_pd):
 
         if ids_to_process:
             df_pl = data_utils.load_data(is_full_data=True)
-    
+
             if df_pl is None or df_pl.height == 0:
                 raise ValueError("Data loading returned an empty DataFrame. Cannot proceed.")
-    
+
             # Pre-fill missing sensor data to prevent errors in feature calculations
             print("Applying forward/backward fill to raw sensor data...")
             for col in config.ALL_RAW_SENSOR_COLS:
@@ -431,10 +431,10 @@ def run_feature_engineering_stage(sequence_info_all_pd):
             # Ensure we only process IDs that are actually present in the raw data
             valid_ids_in_data = set(df_pl['sequence_id'].unique().to_list())
             final_ids_to_process = [id for id in ids_to_process if id in valid_ids_in_data]
-            
+
             if len(final_ids_to_process) != len(ids_to_process):
                 print(f"Warning: {len(ids_to_process) - len(final_ids_to_process)} sequence IDs from metadata were not found in the data file and will be skipped.")
-                
+
             joblib.Parallel(n_jobs=-1, verbose=0)(
                 joblib.delayed(feature_engineering._process_single_sequence_for_fe)(
                     df_pl.filter(pl.col('sequence_id') == seq_id),
@@ -459,10 +459,10 @@ def run_feature_engineering_stage(sequence_info_all_pd):
         # ... (code to get schema from a sample file and save feature_names.json) ...
         # Get schema from a sample file to create feature_names.json
         # Then, select the first file from that safe list
-        
+
         sample_file = os.path.join(feature_output_dir, parquet_files[0])
         sample_df = pl.read_parquet(sample_file)
-        
+
         feature_names = feature_engineering.get_all_feature_columns(sample_df)
         with open(config.FEATURE_NAMES_FILE_PATH, 'w') as f:
             json.dump(feature_names, f, indent=4)
@@ -497,7 +497,7 @@ def run_inter_sequence_feature_stage(sequence_info_all_pd):
             last_run_config = json.load(f)
         with open(main_feature_config_path, 'r') as f:
             current_feature_config = json.load(f)
-        
+
         # If the underlying features are the same and we're not forcing a rerun, skip.
         if last_run_config == current_feature_config and not config.FORCE_RERUN_INTER_SEQUENCE:
             print("✅ Inter-sequence features are up-to-date with current features. Skipping.")
@@ -568,7 +568,7 @@ def run_inter_sequence_feature_stage(sequence_info_all_pd):
         final_subject_stats = pl.concat(all_subject_stats)
         joblib.dump(final_subject_stats, config.SUBJECT_STATS_PATH)
         print(f"✅ Subject-level statistics saved to {config.SUBJECT_STATS_PATH}")
-        
+
         # Save a copy of the main feature config as this stage's fingerprint
         shutil.copy(main_feature_config_path, inter_seq_config_path)
         print("Saved inter-sequence config fingerprint.")
@@ -580,21 +580,21 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
     Creates and prepares training and validation tf.data.Dataset objects.
     This version correctly flattens/reconstructs data for tf.py_function.
     """
-    
+
     # 1. Create a lightweight generator that just yields IDs and labels
     def id_generator(ids):
         for seq_id in ids:
             yield (seq_id, label_map[seq_id])
-            
+
     # 2. Create a processing function that returns a FLAT TUPLE
     def _process_data(seq_id_tensor, label):
         seq_id = seq_id_tensor.numpy().decode('utf-8')
         sequence = data_cache[seq_id].copy()
-        
+
         # Data Augmentation
         if config.ENABLE_DATA_AUGMENTATION and np.random.rand() < 0.5:
              sequence = jitter(sequence) # Simplified augmentation for clarity
-        
+
         # Padding/Truncation
         if sequence.shape[0] > config.MAX_SEQUENCE_LENGTH:
             sequence = sequence[:config.MAX_SEQUENCE_LENGTH]
@@ -608,7 +608,7 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
             demographics_data = demographics_processed_all.loc[subject_id].values.astype('float32')
         else:
             demographics_data = np.array([], dtype='float32')
-        
+
         # Return a flat tuple of numpy arrays
         return sequence, demographics_data, label
 
@@ -620,13 +620,13 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
             inp=[seq_id, label],
             Tout=[tf.float32, tf.float32, tf.float32]
         )
-        
+
         # Reconstruct the dictionary structure the model expects
         inputs = {
-            'time_series_input': sequence, 
+            'time_series_input': sequence,
             'demographics_input': demographics
         }
-        
+
         # Set shapes manually after the py_function
         inputs['time_series_input'].set_shape(output_signature[0]['time_series_input'].shape)
         inputs['demographics_input'].set_shape(output_signature[0]['demographics_input'].shape)
@@ -649,7 +649,7 @@ def _create_tf_datasets(train_ids, val_ids, data_cache, label_map, seq_to_subj_m
 
     steps_per_epoch = (len(train_ids) + config.GLOBAL_BATCH_SIZE - 1) // config.GLOBAL_BATCH_SIZE
     validation_steps = (len(val_ids) + config.GLOBAL_BATCH_SIZE - 1) // config.GLOBAL_BATCH_SIZE
-    
+
     return train_dataset, val_dataset, steps_per_epoch, validation_steps, np.array([label_map[sid] for sid in train_ids])
 
 """
@@ -722,7 +722,7 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
         if os.path.exists(selected_features_path):
             feature_list_path = selected_features_path
             print(f"Using selected feature set from: {feature_list_path}")
-            
+
     # Load feature names and create shape tuple
     with open(feature_list_path, 'r') as f:
         feature_columns = json.load(f)
@@ -759,20 +759,27 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
         print("\n➡️ Step 1/4: Loading training set Parquet files...")
         train_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f"seq_{sid}_features.parquet") for sid in hpo_train_ids]
         train_data_pl = pl.read_parquet(train_files)
-        
+
         print("➡️ Step 2/4: Loading validation set Parquet files...")
         val_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f"seq_{sid}_features.parquet") for sid in hpo_val_ids]
         val_data_pl = pl.read_parquet(val_files)
-  
+
         print("➡️ Step 3/4: Fitting the data scaler...")
         ts_scaler = StandardScaler().fit(train_data_pl.select(feature_columns).to_numpy())
-        
+
         print("➡️ Step 4/4: Building in-memory data cache...")
         combined_data_pl = pl.concat([train_data_pl, val_data_pl])
         data_cache = {
             sid[0]: ts_scaler.transform(g.select(feature_columns).to_numpy(allow_copy=True)).astype(np.float32)
             for sid, g in combined_data_pl.group_by("sequence_id")
         }
+
+        # --- Add this block for feedback ---
+        # Calculate the total memory size of the numpy arrays in the cache
+        cache_size_mb = sum(v.nbytes for v in data_cache.values()) / (1024 * 1024)
+        print(f"✅ Data cache created successfully for {len(data_cache)} sequences.")
+        print(f"   - Estimated cache size in RAM: {cache_size_mb:.2f} MB")
+
         print("✅ Data preparation complete. Initializing Keras Tuner.")
 
         # 2. Load only the necessary data for this split
@@ -859,7 +866,7 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
         for fold, (train_idx, val_idx) in enumerate(sgkf.split(sequence_info_all_pd, sequence_info_all_pd['gesture_encoded'], groups=sequence_info_all_pd['subject'])):
 
             model_path = os.path.join(config.MODEL_SAVE_DIR, f"main_model_fold_{fold+1}.keras")
-            train_config_path = os.path.join(config.MODEL_SAVE_DIR, f"training_config_fold_{fold+1}.json")           
+            train_config_path = os.path.join(config.MODEL_SAVE_DIR, f"training_config_fold_{fold+1}.json")
 
             # --- NEW SMART CHECKPOINT ---
             hp_placeholder = model_definition.kt.HyperParameters()
@@ -931,17 +938,18 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
                 # Get the winning LR settings FROM the placeholder
                 winning_lr = hp_placeholder.get('initial_learning_rate')
                 winning_schedule_type = hp_placeholder.get('learning_rate_schedule')
-                
+
                 # Define callbacks
                 callbacks = [
-                    tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
+                    #tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
+                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
                     tf.keras.callbacks.ModelCheckpoint(model_path, save_best_only=True, monitor='val_accuracy', mode='max'),
                     model_definition.LRLogger()
                 ]
 
                 # Initialize optimizer with the winning learning rate
                 optimizer = tf.keras.optimizers.Adam(learning_rate=winning_lr, clipnorm=1.0)
-                
+
                 # Conditionally set up the learning rate scheduler or callback
                 if winning_schedule_type == 'one_cycle':
                     total_steps = steps_per_epoch * 100
@@ -951,9 +959,9 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
                     decay_steps = int(config.DEFAULT_COSINE_DECAY_EPOCHS * steps_per_epoch)
                     lr_schedule = tf.keras.optimizers.schedules.CosineDecay(winning_lr, decay_steps if decay_steps > 0 else 1)
                     optimizer.learning_rate = lr_schedule
-                
+
                 # Note: The 'constant' case is already handled by initializing the optimizer with winning_lr
-                
+
                 # Compile the model
                 model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
@@ -999,7 +1007,7 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
     Orchestrates post-training analysis by calling modular helper functions.
     Consolidates OOF predictions and runs CM, Permutation Importance, and SHAP analyses.
     """
-    
+
     # The analysis depends on the trained models. We use the config from fold 1 as a fingerprint.
     train_config_path = os.path.join(config.MODEL_SAVE_DIR, "training_config_fold_1.json")
     analysis_fingerprint_path = os.path.join(config.MODEL_SAVE_DIR, "analysis_fingerprint.json")
@@ -1010,14 +1018,14 @@ def run_analysis_stage(sequence_info_all_pd, demographics_processed_all, global_
             current_model_config = json.load(f)
         with open(analysis_fingerprint_path, 'r') as f:
             last_analysis_config = json.load(f)
-        
+
         if current_model_config == last_analysis_config:
             print("✅ Analysis is up-to-date with trained models. Skipping.")
             return
-        
+
     # This now correctly reads the populated dictionary from the config module
     class_names = sorted(list(config.GESTURE_LABELS.keys()))
-    
+
     print("\n" + "="*80 + "\n--- STAGE 5: Post-Training Analysis ---\n" + "="*80)
 
     # 1. Consolidate OOF predictions
@@ -1171,7 +1179,7 @@ def main_orchestrator(strategy):
 
     # Stage 3: Inter-Sequence Features
     run_inter_sequence_feature_stage(sequence_info)
-    
+
     # Stage 3.1: Automated Feature Selection
     run_feature_selection_stage(sequence_info)
 
@@ -1219,7 +1227,7 @@ def run_diagnostics(sequence_info_all_pd):
                 print(f"   (Example extra: {list(extra_in_features)[:3]})")
     except Exception as e:
         print(f"❌ ERROR: Diagnostics failed to run. Reason: {e}")
-        
+
 def run_feature_selection_stage(sequence_info):
     """
     Loads all features, runs a selection algorithm, and saves the list of best features.
@@ -1228,26 +1236,26 @@ def run_feature_selection_stage(sequence_info):
         return # Skip if not enabled
 
     print("\n" + "="*80 + "\n--- NEW STAGE: Automated Feature Selection ---\n" + "="*80)
-    
+
     # Load all feature data (this can be memory intensive)
     all_feature_files = [os.path.join(config.PERMANENT_FEATURE_DIR, f) for f in os.listdir(config.PERMANENT_FEATURE_DIR) if f.endswith('.parquet')]
     df_all = pl.read_parquet(all_feature_files)
-    
+
     # Use only static features for selection
     static_features_df = df_all.group_by('sequence_id').first()
-    
+
     # Prepare data
     with open(config.FEATURE_NAMES_FILE_PATH, 'r') as f:
         all_feature_names = json.load(f)
     static_feature_names = [f for f in all_feature_names if any(s in f for s in ['_mean', '_std', '_fft', '_wavelet'])]
-    
+
     X = static_features_df.select(static_feature_names).to_numpy()
     y = static_features_df.join(sequence_info, on='sequence_id').select('gesture_encoded').to_numpy().ravel()
-    
+
     # Run selection
     selector = SelectFromModel(RandomForestClassifier(n_estimators=100, random_state=config.RANDOM_STATE, n_jobs=-1))
     selector.fit(X, y)
-    
+
     selected_features = np.array(static_feature_names)[selector.get_support()].tolist()
     print(f"Selected {len(selected_features)} features out of {len(static_feature_names)}.")
 
@@ -1255,4 +1263,4 @@ def run_feature_selection_stage(sequence_info):
     selected_features_path = os.path.join(config.MODEL_SAVE_DIR, 'selected_feature_names.json')
     with open(selected_features_path, 'w') as f:
         json.dump(selected_features, f, indent=4)
-    print(f"Selected feature list saved to {selected_features_path}")        
+    print(f"Selected feature list saved to {selected_features_path}")

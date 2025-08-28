@@ -156,7 +156,7 @@ def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names
         if config.SHAP_EXPLAINER_TYPE == 'deep':
             if background_demo.size > 0:
                 explainer_inputs = [tf.convert_to_tensor(d, dtype=tf.float32) for d in [background_ts, background_demo]]
-                explain_inputs = {'time_series_input': tf.convert_to_tensor(explain_ts, dtype=tf.float32), 
+                explain_inputs = {'time_series_input': tf.convert_to_tensor(explain_ts, dtype=tf.float32),
                                   'demographics_input': tf.convert_to_tensor(explain_demo, dtype=tf.float32)}
             else:
                 explainer_inputs = tf.convert_to_tensor(background_ts, dtype=tf.float32)
@@ -164,7 +164,7 @@ def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names
 
             explainer = shap.DeepExplainer(model, explainer_inputs)
             shap_values = explainer.shap_values(explain_inputs)
-            
+
             # --- THIS IS THE FIX ---
             # Correctly unpack the results from DeepExplainer
             if isinstance(shap_values, list) and len(shap_values) > 1:
@@ -182,24 +182,24 @@ def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names
 
             background_ts_2d = background_ts.reshape(background_ts.shape[0], -1)
             explain_ts_2d = explain_ts.reshape(explain_ts.shape[0], -1)
-            
+
             summary_data_2d = shap.kmeans(background_ts_2d, 10)
             explainer = shap.KernelExplainer(predict_wrapper, summary_data_2d)
             shap_values_flat = explainer.shap_values(explain_ts_2d[:10])
-            
+
             # --- THIS IS THE FIX ---
             shap_values_np = np.array(shap_values_flat)
             # shap_values_np shape is (num_classes, num_samples, flattened_features)
             # The KernelExplainer for multi-output models returns a list of arrays,
             # so the shape should be (num_classes, num_samples, flattened_features)
-            
+
             # Correctly reshape and transpose the array
             num_classes, num_samples, _ = shap_values_np.shape
-            
+
             shap_values_ts = shap_values_np.reshape(
-                num_classes, 
-                num_samples, 
-                config.MAX_SEQUENCE_LENGTH, 
+                num_classes,
+                num_samples,
+                config.MAX_SEQUENCE_LENGTH,
                 len(ts_feature_names)
             )
 
@@ -217,15 +217,15 @@ def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names
             plt.title('Overall Feature Importance (SHAP) - Demographics')
             plt.tight_layout()
             plt.savefig(os.path.join(output_dir, "shap_demographics_importance.png"))
-            plt.show()            
-            
+            plt.show()
+
         if ts_feature_names and shap_values_ts is not None:
             avg_abs_shap_ts = np.mean(np.abs(shap_values_ts), axis=(0, 1, 2))
             shap_importance_df_ts = pd.DataFrame({
-                'Feature': ts_feature_names, 
+                'Feature': ts_feature_names,
                 'Mean Absolute SHAP': avg_abs_shap_ts
             }).sort_values(by='Mean Absolute SHAP', ascending=False)
-            
+
             plt.figure(figsize=(12, 8))
             sns.barplot(x='Mean Absolute SHAP', y='Feature', data=shap_importance_df_ts.head(40))
             plt.title('Overall Feature Importance (SHAP) - Top 40 Time-Series')
