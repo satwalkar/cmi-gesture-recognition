@@ -13,8 +13,8 @@ TRAIN = True   # Set to False for submission/inference
 # --- Framework Rerun Flags ---
 # Use these to force specific stages to run again, ignoring checkpoints.
 FORCE_RERUN_SETUP = True
-FORCE_RERUN_FEATURE_ENGINEERING = True
-FORCE_RERUN_INTER_SEQUENCE = True
+FORCE_RERUN_FEATURE_ENGINEERING = False
+FORCE_RERUN_INTER_SEQUENCE = False
 FORCE_RERUN_TRAINING = True
 FORCE_RERUN_ANALYSIS = True
 
@@ -65,11 +65,11 @@ ENABLE_ACC_FEATURES = True
 ENABLE_ROT_FEATURES = True
 
 # THM refers to Thermistor data.
-ENABLE_THM_FEATURES = False
+ENABLE_THM_FEATURES = True
 
 # Impact: Enabling this drastically increases data dimensionality. It can improve performance
 # but also significantly increases computational cost and and memory. Use with caution.
-ENABLE_TOF_FEATURES = False # TOF refers to Time-of-Flight data. CRITICAL
+ENABLE_TOF_FEATURES = False # CRITICAL: TOF refers to Time-of-Flight data.
 
 # --- 3.2 Per-Row Derived Features ---
 # Feature Engineering Control Variables - Organized by Level and Granularity, Basic/Fundamental Per-Row Features
@@ -89,24 +89,24 @@ ENABLE_INTER_SEQUENCE_FEATURES = True # CRITICAL: Deviations from subject-level 
 # Basic Statistics
 ENABLE_BASIC_STATS = True # Controls global statistical features (mean, std, min, max, median, range, skew, kurtosis)
 ENABLE_BASIC_STATS_IMU = True
-ENABLE_BASIC_STATS_THM = False
+ENABLE_BASIC_STATS_THM = True
 ENABLE_BASIC_STATS_TOF = False
 
 # Dominant FFT Features
-ENABLE_DOMINANT_FFT_FEATURES = True # Controls dominant FFT amplitude and frequency features
-ENABLE_DOMINANT_FFT_FEATURES_IMU = True
+ENABLE_DOMINANT_FFT_FEATURES = False # Controls dominant FFT amplitude and frequency features
+ENABLE_DOMINANT_FFT_FEATURES_IMU = False
 ENABLE_DOMINANT_FFT_FEATURES_THM = False
 ENABLE_DOMINANT_FFT_FEATURES_TOF = False
 
 # Comprehensive FFT Spectral Features
-ENABLE_COMPREHENSIVE_FFT_SPECTRAL = True # Enhanced frequency domain features (energy bands, centroids, etc.)
-ENABLE_COMPREHENSIVE_FFT_SPECTRAL_IMU = True
+ENABLE_COMPREHENSIVE_FFT_SPECTRAL = False # Enhanced frequency domain features (energy bands, centroids, etc.)
+ENABLE_COMPREHENSIVE_FFT_SPECTRAL_IMU = False
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL_THM = False
 ENABLE_COMPREHENSIVE_FFT_SPECTRAL_TOF = False
 
 # Autocorrelation
-ENABLE_COMPREHENSIVE_AUTOCORR = True # Autocorrelation at lag 1
-ENABLE_COMPREHENSIVE_AUTOCORR_IMU = True
+ENABLE_COMPREHENSIVE_AUTOCORR = False # Autocorrelation at lag 1
+ENABLE_COMPREHENSIVE_AUTOCORR_IMU = False
 ENABLE_COMPREHENSIVE_AUTOCORR_THM = False
 ENABLE_COMPREHENSIVE_AUTOCORR_TOF = False
 
@@ -117,14 +117,14 @@ ENABLE_NOLDS_ENTROPY_THM = False
 ENABLE_NOLDS_ENTROPY_TOF = False
 
 # Windowed Statistics
-ENABLE_COMPREHENSIVE_WINDOWED_STATS = True # Aggregated statistics over sliding windows
-ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = True
+ENABLE_COMPREHENSIVE_WINDOWED_STATS = False # Aggregated statistics over sliding windows
+ENABLE_COMPREHENSIVE_WINDOWED_STATS_IMU = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_THM = False
 ENABLE_COMPREHENSIVE_WINDOWED_STATS_TOF = False
 
 # Other Comprehensive Features
-ENABLE_COMPREHENSIVE_CORRELATIONS = True # Cross-axis correlations
-ENABLE_COMPREHENSIVE_PCA = True # PCA explained variance ratios
+ENABLE_COMPREHENSIVE_CORRELATIONS = False # Cross-axis correlations
+ENABLE_COMPREHENSIVE_PCA = False # PCA explained variance ratios
 ENABLE_COMPREHENSIVE_MISSING_INDICATORS = False # Inactivity indicators for TOF/THM
 
 # --- 3.5 Advanced & Experimental Features ---
@@ -146,8 +146,8 @@ ENABLE_TOF_SHAPE_FEATURES = False # A.2. Extract features describing the "shape"
 DROP_RAW_TOF_FEATURES = False # Set True to use ONLY derived TOF features
 
 # THM-Specific Advanced Features
-ENABLE_THM_SPATIAL_TEMPORAL_FEATURES = False # A.3. Spatial/temporal features for THM sensors
-ENABLE_INTERACTION_FEATURES = False # A.4. Interaction features between sensor types
+ENABLE_THM_SPATIAL_TEMPORAL_FEATURES = True # A.3. Spatial/temporal features for THM sensors
+ENABLE_INTERACTION_FEATURES = True # A.4. Interaction features between sensor types
 
 # ==========================================================
 # SECTION 4: MODEL & TRAINING CONFIGURATION
@@ -170,16 +170,10 @@ ENABLE_DATA_AUGMENTATION = True # Add noise, time warping, magnitude scaling dur
 # CRITICAL: HPO_ENABLED.
 # Impact: Setting this to True automates the search for optimal hyperparameters. It's the most
 # efficient way to fine-tune the model, but it is computationally intensive.
-HPO_ENABLED = True # Set to True to enable Keras Tuner Hyperparameter Optimization
+HPO_ENABLED = False # Set to True to enable Keras Tuner Hyperparameter Optimization
 HPO_NUM_TRIALS = 30 # Number of HP combinations to try for Keras Tuner (set low for testing)
 
 # --- 4.4 Fixed Training Parameters (when HPO_ENABLED = False) ---
-# CRITICAL: DEFAULT_LR_SCHEDULE_TYPE and DEFAULT_INITIAL_LEARNING_RATE.
-# New: Default Learning Rate Schedule parameters when HPO is OFF
-# Impact: These are arguably the most important training parameters for a fixed run. 
-# Cosine decay is generally a good choice over a constant LR. A good starting LR is crucial.
-DEFAULT_LR_SCHEDULE_TYPE = 'cosine_decay' # 'constant' or 'cosine_decay', or 'one_cycle'
-DEFAULT_INITIAL_LEARNING_RATE = 1e-3 # 0.0005 # Recommended range for DEFAULT_INITIAL_LEARNING_RATE: 1e-4, 5e-4, 1e-3 (current).
 DEFAULT_COSINE_DECAY_EPOCHS = 100 # Number of epochs over which to decay for fixed schedule
 
 # ==========================================================

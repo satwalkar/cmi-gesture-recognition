@@ -959,8 +959,8 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
 
                 # Define callbacks
                 callbacks = [
-                    tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
-                    # tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+                    # tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
+                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
                     tf.keras.callbacks.ModelCheckpoint(model_path, save_best_only=True, monitor='val_accuracy', mode='max'),
                     model_definition.LRLogger()
                 ]

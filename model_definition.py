@@ -296,7 +296,11 @@ def model_builder(hp: kt.HyperParameters, ts_shape: tuple, demo_shape: tuple, nu
     # combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.3, max_value=0.5, step=0.1, default=0.4)
     combined_dropout_rate = hp.Float('combined_dropout_rate', min_value=0.4, max_value=0.6, step=0.1, default=0.5)
 
-    hp.Choice('learning_rate_schedule', values=['cosine_decay', 'constant'], default='cosine_decay')
+    # --- Learning Rate Configuration ---
+    # The learning rate and schedule are critical for a fixed run (when HPO is OFF).
+    # 'cosine_decay' is generally a good choice over 'constant'.
+    # A good search range for the initial_learning_rate is typically 1e-4 to 2e-3.
+    hp.Choice('learning_rate_schedule', values=['cosine_decay', 'constant', 'one_cycle'], default='cosine_decay')
     hp.Float('initial_learning_rate', min_value=3e-4, max_value=2e-3, sampling='log', default=5e-4)
 
     # --- 2. Define Common Arguments ---
