@@ -1,4 +1,5 @@
 # pipeline_stages.py
+
 import os
 import gc
 import json
@@ -845,15 +846,32 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
             callbacks=[stop_early]
         )
 
-        # 3. Get the best hyperparameters and save/print them
-        best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
+        print("\n--- Extracting and Saving Optimal Hyperparameters ---")
+        # 1. Get the best TRIAL object, which contains both the score and the HPs
+        best_trial = tuner.oracle.get_best_trials(num_trials=1)[0]
+        
+        # 2. Get the hyperparameters dictionary from the trial
+        best_hps_dict = best_trial.hyperparameters.values
+        
+        # 3. Get the best score and add it to the dictionary
+        best_score = best_trial.score
+        best_hps_dict['best_val_accuracy'] = best_score
+
+        # 4. Save the complete dictionary to a JSON file
+        hpo_results_path = os.path.join(config.MODEL_SAVE_DIR, "best_hpo_results.json")
+        with open(hpo_results_path, 'w') as f:
+            json.dump(best_hps_dict, f, indent=4)
+        
+        print(f"✅ Optimal hyperparameters and best score ({best_score:.4f}) saved to: {hpo_results_path}")
+
+        # 5. Print the summary to the console
         print("\n--- Optimal Hyperparameters Found ---")
-        for param, value in best_hps.values.items():
+        for param, value in best_hps_dict.items():
             print(f"{param}: {value}")
         print("------------------------------------")
 
-        # 4. Build and save the best model
-        best_model = tuner.hypermodel.build(best_hps)
+        # 6. Build and save the single best model from the HPO run
+        best_model = tuner.hypermodel.build(best_trial.hyperparameters)
         best_model.save(os.path.join(config.MODEL_SAVE_DIR, "best_hpo_model.keras"))
         print("\n✅ Best model from HPO search saved.")
     # ==========================================================
@@ -941,8 +959,8 @@ def run_training_stage(sequence_info_all_pd, demographics_processed_all, global_
 
                 # Define callbacks
                 callbacks = [
-                    #tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
-                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+                    tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=15, restore_best_weights=True),
+                    # tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
                     tf.keras.callbacks.ModelCheckpoint(model_path, save_best_only=True, monitor='val_accuracy', mode='max'),
                     model_definition.LRLogger()
                 ]

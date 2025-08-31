@@ -1,4 +1,5 @@
 # analysis_tools.py
+
 import os
 import numpy as np
 import pandas as pd
@@ -139,9 +140,103 @@ def calculate_and_plot_permutation_importance(model, val_data, ts_feature_names,
 
 def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names, demo_feature_names, output_dir):
     """
-    Calculates and plots SHAP summary plots.
-    This version includes the corrected reshaping logic for KernelExplainer.
+    Final, validated function to calculate and plot SHAP summary plots.
+    Handles all model types and explainer types correctly.
     """
+    print("\n" + "="*50)
+    print(f"--- SHAP Values Analysis (Using '{config.SHAP_EXPLAINER_TYPE}' explainer) ---")
+    print("="*50)
+
+    background_ts, background_demo = train_data
+    explain_ts, explain_demo = val_data
+
+    try:
+        shap_values_ts = None
+        shap_values_demo = None
+
+        if config.SHAP_EXPLAINER_TYPE == 'deep':
+            # Logic for DeepExplainer
+            if background_demo.size > 0:
+                explainer_inputs = [tf.convert_to_tensor(d, dtype=tf.float32) for d in [background_ts, background_demo]]
+                explain_inputs = {'time_series_input': tf.convert_to_tensor(explain_ts, dtype=tf.float32), 
+                                  'demographics_input': tf.convert_to_tensor(explain_demo, dtype=tf.float32)}
+            else:
+                explainer_inputs = tf.convert_to_tensor(background_ts, dtype=tf.float32)
+                explain_inputs = tf.convert_to_tensor(explain_ts, dtype=tf.float32)
+            
+            explainer = shap.DeepExplainer(model, explainer_inputs)
+            shap_values = explainer.shap_values(explain_inputs)
+
+            if isinstance(shap_values, list) and len(shap_values) > 1:
+                shap_values_ts, shap_values_demo = shap_values[0], shap_values[1]
+            else:
+                shap_values_ts = shap_values
+
+        elif config.SHAP_EXPLAINER_TYPE == 'kernel':
+            # Logic for KernelExplainer
+            def predict_wrapper(X_flattened):
+                X_reshaped = X_flattened.reshape(-1, config.MAX_SEQUENCE_LENGTH, len(ts_feature_names))
+                return model.predict(X_reshaped)
+
+            background_ts_2d = background_ts.reshape(background_ts.shape[0], -1)
+            explain_ts_2d = explain_ts.reshape(explain_ts.shape[0], -1)
+            summary_data_2d = shap.kmeans(background_ts_2d, 10)
+            explainer = shap.KernelExplainer(predict_wrapper, summary_data_2d)
+            shap_values_flat = explainer.shap_values(explain_ts_2d[:10])
+
+            # KernelExplainer for multi-class returns a list of arrays (one per class)
+            # each with shape (num_samples, flattened_features)
+            shap_values_by_class = np.array(shap_values_flat) # Shape: (classes, samples, flat_features)
+            
+            # Reshape to (classes, samples, timesteps, features)
+            shap_values_ts = shap_values_by_class.reshape(
+                shap_values_by_class.shape[0], 
+                shap_values_by_class.shape[1], 
+                config.MAX_SEQUENCE_LENGTH, 
+                len(ts_feature_names)
+            )
+
+        # --- Plotting Logic (now works for both explainers) ---
+        if demo_feature_names and shap_values_demo is not None:
+            avg_abs_shap = np.mean(np.abs(shap_values_demo), axis=(0, 1))
+            shap_importance_df = pd.DataFrame({
+                'Feature': demo_feature_names,
+                'Mean Absolute SHAP': avg_abs_shap
+            }).sort_values(by='Mean Absolute SHAP', ascending=False)
+
+            plt.figure(figsize=(10, 6))
+            sns.barplot(x='Mean Absolute SHAP', y='Feature', data=shap_importance_df)
+            plt.title('Overall Feature Importance (SHAP) - Demographics')
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, "shap_demographics_importance.png"))
+            plt.show()
+            
+        if ts_feature_names and shap_values_ts is not None:
+            avg_abs_shap_ts = np.mean(np.abs(shap_values_ts), axis=(0, 1, 2))
+            shap_importance_df_ts = pd.DataFrame({
+                'Feature': ts_feature_names,
+                'Mean Absolute SHAP': avg_abs_shap_ts
+            }).sort_values(by='Mean Absolute SHAP', ascending=False)
+
+            plt.figure(figsize=(12, 8))
+            sns.barplot(x='Mean Absolute SHAP', y='Feature', data=shap_importance_df_ts.head(40))
+            plt.title('Overall Feature Importance (SHAP) - Top 40 Time-Series')
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, "shap_timeseries_importance.png"))
+            plt.show()
+        
+        print("SHAP plots saved to model directory.")
+
+    except Exception as e:
+        print(f"Error during SHAP value calculation: {e}")
+        print("SHAP analysis skipped.")
+        
+"""
+def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names, demo_feature_names, output_dir):
+    
+    # Calculates and plots SHAP summary plots.
+    # This version includes the corrected reshaping logic for KernelExplainer.
+    
     print("\n" + "="*50)
     print(f"--- SHAP Values Analysis (Using '{config.SHAP_EXPLAINER_TYPE}' explainer) ---")
     print("="*50)
@@ -236,3 +331,4 @@ def calculate_and_plot_shap_values(model, train_data, val_data, ts_feature_names
     except Exception as e:
         print(f"Error during SHAP value calculation: {e}")
         print("SHAP analysis skipped.")
+"""        
